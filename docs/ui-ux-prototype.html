@@ -1,0 +1,866 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>YS 单据系统 UI/UX 原型 v1</title>
+    <style>
+      :root {
+        --bg: #f4f6f5;
+        --panel: #ffffff;
+        --panel-soft: #f8faf9;
+        --line: #dfe6e2;
+        --line-strong: #cbd7d1;
+        --text: #17211c;
+        --muted: #68746e;
+        --faint: #8a9690;
+        --brand: #17634d;
+        --brand-dark: #0d4d3a;
+        --brand-soft: #e8f3ef;
+        --amber: #b7791f;
+        --amber-soft: #fff4df;
+        --danger: #b42318;
+        --shadow: 0 16px 40px rgba(20, 36, 30, 0.08);
+        --radius: 8px;
+        font-family:
+          Inter, "Segoe UI", "Microsoft YaHei", "PingFang SC", Arial, sans-serif;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        color: var(--text);
+        background:
+          linear-gradient(180deg, #fbfcfb 0%, var(--bg) 190px),
+          var(--bg);
+      }
+
+      button,
+      input,
+      select {
+        font: inherit;
+      }
+
+      .app {
+        display: grid;
+        grid-template-columns: 236px 1fr;
+        height: 100vh;
+        overflow: hidden;
+      }
+
+      .sidebar {
+        display: flex;
+        flex-direction: column;
+        border-right: 1px solid var(--line);
+        background: #fbfcfb;
+      }
+
+      .brand {
+        height: 76px;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 0 20px;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .brand-mark {
+        display: grid;
+        width: 38px;
+        height: 38px;
+        place-items: center;
+        border-radius: 8px;
+        color: #fff;
+        background: var(--brand);
+        font-weight: 800;
+      }
+
+      .brand-title {
+        font-weight: 760;
+        letter-spacing: 0;
+      }
+
+      .brand-subtitle {
+        margin-top: 2px;
+        color: var(--faint);
+        font-size: 12px;
+      }
+
+      .nav {
+        padding: 14px 10px;
+        overflow: auto;
+      }
+
+      .nav-label {
+        margin: 16px 10px 8px;
+        color: var(--faint);
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+      }
+
+      .nav-button {
+        width: 100%;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        min-height: 38px;
+        padding: 0 12px;
+        border: 1px solid transparent;
+        border-radius: 7px;
+        color: #33423b;
+        background: transparent;
+        cursor: pointer;
+        text-align: left;
+      }
+
+      .nav-button:hover {
+        background: var(--panel-soft);
+      }
+
+      .nav-button.active {
+        color: var(--brand-dark);
+        border-color: #c9e1d7;
+        background: var(--brand-soft);
+        font-weight: 680;
+      }
+
+      .nav-icon {
+        width: 18px;
+        text-align: center;
+        color: currentColor;
+      }
+
+      .workspace {
+        display: grid;
+        grid-template-rows: 76px 1fr;
+        min-width: 0;
+        overflow: hidden;
+      }
+
+      .topbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 20px;
+        padding: 0 26px;
+        border-bottom: 1px solid var(--line);
+        background: rgba(255, 255, 255, 0.92);
+        backdrop-filter: blur(12px);
+      }
+
+      .eyebrow {
+        color: var(--brand);
+        font-size: 11px;
+        font-weight: 800;
+        letter-spacing: 0.09em;
+      }
+
+      .page-title {
+        margin-top: 4px;
+        font-size: 22px;
+        font-weight: 780;
+      }
+
+      .page-subtitle {
+        margin-top: 3px;
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .actions {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 5px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--panel-soft);
+      }
+
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 7px;
+        min-height: 34px;
+        padding: 0 13px;
+        border: 1px solid var(--line-strong);
+        border-radius: 6px;
+        color: #26332e;
+        background: #fff;
+        cursor: pointer;
+      }
+
+      .btn.primary {
+        color: #fff;
+        border-color: var(--brand);
+        background: var(--brand);
+      }
+
+      .btn.ghost {
+        border-color: transparent;
+        background: transparent;
+      }
+
+      .btn.danger {
+        color: var(--danger);
+      }
+
+      .content {
+        overflow: auto;
+        padding: 22px 26px 32px;
+      }
+
+      .doc-grid {
+        display: grid;
+        grid-template-columns: minmax(720px, 1fr) 356px;
+        gap: 18px;
+        align-items: start;
+      }
+
+      .panel {
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        background: var(--panel);
+        box-shadow: 0 1px 0 rgba(255, 255, 255, 0.8);
+      }
+
+      .panel + .panel {
+        margin-top: 14px;
+      }
+
+      .panel-header {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        min-height: 58px;
+        padding: 14px 16px;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .panel-icon {
+        display: grid;
+        width: 34px;
+        height: 34px;
+        place-items: center;
+        border-radius: 7px;
+        color: var(--brand);
+        background: var(--brand-soft);
+      }
+
+      .panel-title {
+        font-weight: 730;
+      }
+
+      .panel-note {
+        margin-top: 2px;
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .form {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 12px 14px;
+        padding: 16px;
+      }
+
+      .field {
+        display: grid;
+        gap: 6px;
+      }
+
+      .field.wide {
+        grid-column: span 2;
+      }
+
+      .label {
+        color: #3d4b45;
+        font-size: 12px;
+        font-weight: 650;
+      }
+
+      .input {
+        width: 100%;
+        height: 36px;
+        padding: 0 10px;
+        border: 1px solid var(--line-strong);
+        border-radius: 6px;
+        color: var(--text);
+        background: #fff;
+        outline: none;
+      }
+
+      .input:focus {
+        border-color: var(--brand);
+        box-shadow: 0 0 0 3px rgba(23, 99, 77, 0.12);
+      }
+
+      .input.readonly {
+        color: #52605a;
+        background: #f3f6f4;
+      }
+
+      .summary {
+        position: sticky;
+        top: 0;
+      }
+
+      .summary-body {
+        padding: 14px 16px 16px;
+      }
+
+      .metric {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 16px;
+        padding: 11px 0;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .metric:last-child {
+        border-bottom: 0;
+      }
+
+      .metric-label {
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .metric-value {
+        font-size: 17px;
+        font-weight: 760;
+        text-align: right;
+      }
+
+      .metric-value.main {
+        color: var(--amber);
+        font-size: 22px;
+      }
+
+      .hint-card {
+        margin-top: 12px;
+        padding: 12px;
+        border: 1px solid #f1d6a6;
+        border-radius: 7px;
+        color: #5d461d;
+        background: var(--amber-soft);
+        font-size: 12px;
+        line-height: 1.6;
+      }
+
+      .table-page {
+        display: none;
+      }
+
+      .table-page.active,
+      .document-page.active {
+        display: block;
+      }
+
+      .document-page {
+        display: none;
+      }
+
+      .table-toolbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        margin-bottom: 14px;
+      }
+
+      .search {
+        width: 320px;
+      }
+
+      .table-wrap {
+        overflow: hidden;
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+      }
+
+      th,
+      td {
+        height: 42px;
+        padding: 0 14px;
+        border-bottom: 1px solid var(--line);
+        text-align: left;
+        white-space: nowrap;
+      }
+
+      th {
+        color: #52605a;
+        background: #f7faf8;
+        font-size: 12px;
+        font-weight: 760;
+      }
+
+      td {
+        color: #22302a;
+        font-size: 13px;
+      }
+
+      .tag {
+        display: inline-flex;
+        align-items: center;
+        height: 24px;
+        padding: 0 8px;
+        border-radius: 999px;
+        color: var(--brand);
+        background: var(--brand-soft);
+        font-size: 12px;
+        font-weight: 650;
+      }
+
+      .row-actions {
+        display: flex;
+        gap: 6px;
+      }
+
+      .icon-btn {
+        display: grid;
+        width: 30px;
+        height: 30px;
+        place-items: center;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        background: #fff;
+        cursor: pointer;
+      }
+
+      .modal-layer {
+        position: fixed;
+        inset: 0;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        padding: 30px;
+        background: rgba(20, 32, 27, 0.26);
+      }
+
+      .modal-layer.active {
+        display: flex;
+      }
+
+      .modal {
+        width: min(760px, 100%);
+        max-height: 88vh;
+        overflow: hidden;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        background: #fff;
+        box-shadow: var(--shadow);
+      }
+
+      .modal-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 18px 20px;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .modal-title {
+        font-size: 18px;
+        font-weight: 760;
+      }
+
+      .modal-body {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 12px;
+        max-height: 60vh;
+        overflow: auto;
+        padding: 18px 20px;
+      }
+
+      .detail {
+        padding: 10px 12px;
+        border: 1px solid var(--line);
+        border-radius: 7px;
+        background: var(--panel-soft);
+      }
+
+      .detail strong {
+        display: block;
+        margin-bottom: 5px;
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .modal-foot {
+        display: flex;
+        justify-content: flex-end;
+        gap: 8px;
+        padding: 14px 20px;
+        border-top: 1px solid var(--line);
+        background: var(--panel-soft);
+      }
+
+      @media (max-width: 1180px) {
+        .doc-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .summary {
+          position: static;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="app">
+      <aside class="sidebar">
+        <div class="brand">
+          <div class="brand-mark">YS</div>
+          <div>
+            <div class="brand-title">单据工作台</div>
+            <div class="brand-subtitle">合同 · PI · PL · CI</div>
+          </div>
+        </div>
+        <nav class="nav">
+          <div class="nav-label">WORKSPACE</div>
+          <button class="nav-button active" data-page="document">
+            <span class="nav-icon">▦</span>
+            单据生成
+          </button>
+
+          <div class="nav-label">MASTER DATA</div>
+          <button class="nav-button" data-page="customer">
+            <span class="nav-icon">◎</span>
+            客户管理
+          </button>
+          <button class="nav-button" data-page="manager">
+            <span class="nav-icon">◇</span>
+            客户经理
+          </button>
+          <button class="nav-button" data-page="product">
+            <span class="nav-icon">□</span>
+            产品管理
+          </button>
+          <button class="nav-button" data-page="company">
+            <span class="nav-icon">◫</span>
+            贸易户头
+          </button>
+          <button class="nav-button" data-page="config">
+            <span class="nav-icon">⚙</span>
+            条款配置
+          </button>
+        </nav>
+      </aside>
+
+      <main class="workspace">
+        <header class="topbar">
+          <div>
+            <div class="eyebrow" id="eyebrow">DOCUMENTS</div>
+            <div class="page-title" id="pageTitle">单据生成</div>
+            <div class="page-subtitle" id="pageSubtitle">录入合同、箱单与发票信息，并导出所需 PDF。</div>
+          </div>
+          <div class="actions" id="exportActions">
+            <button class="btn primary">导出合同</button>
+            <button class="btn">PI</button>
+            <button class="btn">PL</button>
+            <button class="btn">CI</button>
+          </div>
+        </header>
+
+        <section class="content">
+          <div class="document-page active" id="documentPage">
+            <div class="doc-grid">
+              <div>
+                <section class="panel">
+                  <div class="panel-header">
+                    <div class="panel-icon">▦</div>
+                    <div>
+                      <div class="panel-title">合同信息</div>
+                      <div class="panel-note">客户、产品、港口和付款条件构成单据主体。</div>
+                    </div>
+                  </div>
+                  <div class="form">
+                    <label class="field">
+                      <span class="label">合同编号</span>
+                      <input class="input" value="26ZZYS-J0713" />
+                    </label>
+                    <label class="field">
+                      <span class="label">PO No.</span>
+                      <input class="input" value="PO-2026-0713" />
+                    </label>
+                    <label class="field">
+                      <span class="label">客户</span>
+                      <select class="input">
+                        <option>Yuan Sheng International Trading Co.</option>
+                      </select>
+                    </label>
+                    <label class="field">
+                      <span class="label">联系人</span>
+                      <input class="input readonly" readonly value="***" />
+                    </label>
+                    <label class="field">
+                      <span class="label">产品</span>
+                      <select class="input">
+                        <option>CHEMICAL PRODUCT A / 200KG DRUM</option>
+                      </select>
+                    </label>
+                    <label class="field">
+                      <span class="label">贸易户头</span>
+                      <select class="input">
+                        <option>YS EXPORT LIMITED</option>
+                      </select>
+                    </label>
+                    <label class="field">
+                      <span class="label">装运港</span>
+                      <input class="input" value="SHANGHAI, CHINA" />
+                    </label>
+                    <label class="field">
+                      <span class="label">目的港</span>
+                      <input class="input" value="JAKARTA, INDONESIA" />
+                    </label>
+                    <label class="field wide">
+                      <span class="label">付款条款</span>
+                      <input class="input" value="T/T 30% in advance, balance against copy of B/L" />
+                    </label>
+                  </div>
+                </section>
+
+                <section class="panel">
+                  <div class="panel-header">
+                    <div class="panel-icon">¥</div>
+                    <div>
+                      <div class="panel-title">金额核算</div>
+                      <div class="panel-note">数量、单价与总金额用于合同和 PI 输出。</div>
+                    </div>
+                  </div>
+                  <div class="form">
+                    <label class="field">
+                      <span class="label">数量</span>
+                      <input class="input" value="20.00" />
+                    </label>
+                    <label class="field">
+                      <span class="label">单位</span>
+                      <input class="input" value="MT" />
+                    </label>
+                    <label class="field">
+                      <span class="label">单价</span>
+                      <input class="input" value="1,250.00" />
+                    </label>
+                    <label class="field">
+                      <span class="label">总金额</span>
+                      <input class="input readonly" readonly value="USD 25,000.00" />
+                    </label>
+                  </div>
+                </section>
+
+                <section class="panel">
+                  <div class="panel-header">
+                    <div class="panel-icon">▣</div>
+                    <div>
+                      <div class="panel-title">箱单 / 发票信息</div>
+                      <div class="panel-note">装桶数量驱动净重、毛重和尺寸计算。</div>
+                    </div>
+                  </div>
+                  <div class="form">
+                    <label class="field">
+                      <span class="label">装桶数量</span>
+                      <input class="input" type="number" value="100" />
+                    </label>
+                    <label class="field">
+                      <span class="label">单桶净重</span>
+                      <input class="input readonly" readonly value="200 KG" />
+                    </label>
+                    <label class="field">
+                      <span class="label">总净重</span>
+                      <input class="input readonly" readonly value="20,000 KG" />
+                    </label>
+                    <label class="field">
+                      <span class="label">总毛重</span>
+                      <input class="input readonly" readonly value="21,800 KG" />
+                    </label>
+                    <label class="field">
+                      <span class="label">单桶尺寸</span>
+                      <input class="input readonly" readonly value="0.24 CBM" />
+                    </label>
+                    <label class="field">
+                      <span class="label">总尺寸</span>
+                      <input class="input readonly" readonly value="24.00 CBM" />
+                    </label>
+                  </div>
+                </section>
+              </div>
+
+              <aside class="panel summary">
+                <div class="panel-header">
+                  <div class="panel-icon">✓</div>
+                  <div>
+                    <div class="panel-title">导出前核对</div>
+                    <div class="panel-note">关键计算值和模板输出状态。</div>
+                  </div>
+                </div>
+                <div class="summary-body">
+                  <div class="metric">
+                    <span class="metric-label">总金额</span>
+                    <span class="metric-value main">USD 25,000.00</span>
+                  </div>
+                  <div class="metric">
+                    <span class="metric-label">桶数</span>
+                    <span class="metric-value">100 DRUMS</span>
+                  </div>
+                  <div class="metric">
+                    <span class="metric-label">净重</span>
+                    <span class="metric-value">20,000 KG</span>
+                  </div>
+                  <div class="metric">
+                    <span class="metric-label">毛重</span>
+                    <span class="metric-value">21,800 KG</span>
+                  </div>
+                  <div class="metric">
+                    <span class="metric-label">尺寸</span>
+                    <span class="metric-value">24.00 CBM</span>
+                  </div>
+                  <div class="hint-card">
+                    LOGO 跟随贸易户头读取，生成 PL / CI 时只替换模板中固定占位图，不改变模板位置与尺寸。
+                  </div>
+                </div>
+              </aside>
+            </div>
+          </div>
+
+          <div class="table-page" id="tablePage">
+            <div class="table-toolbar">
+              <input class="input search" placeholder="搜索名称、编号、联系人..." />
+              <button class="btn primary" id="openModal">新增资料</button>
+            </div>
+
+            <section class="panel table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>客户名称</th>
+                    <th>联系人</th>
+                    <th>电话</th>
+                    <th>国家 / 地区</th>
+                    <th>状态</th>
+                    <th>操作</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>Yuan Sheng International Trading Co.</td>
+                    <td>***</td>
+                    <td>+86 021 0000 0000</td>
+                    <td>China</td>
+                    <td><span class="tag">常用</span></td>
+                    <td>
+                      <div class="row-actions">
+                        <button class="icon-btn" title="查看" id="viewRow">👁</button>
+                        <button class="icon-btn" title="编辑">✎</button>
+                        <button class="icon-btn" title="删除">×</button>
+                      </div>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>Pacific Chemical Import Ltd.</td>
+                    <td>Michael Chen</td>
+                    <td>+62 21 0000 0000</td>
+                    <td>Indonesia</td>
+                    <td><span class="tag">启用</span></td>
+                    <td>
+                      <div class="row-actions">
+                        <button class="icon-btn" title="查看">👁</button>
+                        <button class="icon-btn" title="编辑">✎</button>
+                        <button class="icon-btn" title="删除">×</button>
+                      </div>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </section>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <div class="modal-layer" id="modalLayer">
+      <div class="modal">
+        <div class="modal-head">
+          <div>
+            <div class="eyebrow">VIEW DETAILS</div>
+            <div class="modal-title">客户详情</div>
+          </div>
+          <button class="icon-btn" id="closeModal">×</button>
+        </div>
+        <div class="modal-body">
+          <div class="detail"><strong>客户名称</strong>Yuan Sheng International Trading Co.</div>
+          <div class="detail"><strong>联系人</strong>***</div>
+          <div class="detail"><strong>电话</strong>+86 021 0000 0000</div>
+          <div class="detail"><strong>国家 / 地区</strong>China</div>
+          <div class="detail"><strong>地址</strong>Shanghai, China</div>
+          <div class="detail"><strong>备注</strong>联系人为空或 / 时，统一显示为 ***。</div>
+        </div>
+        <div class="modal-foot">
+          <button class="btn ghost" id="closeModal2">关闭</button>
+          <button class="btn primary">转为编辑</button>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      const titles = {
+        document: ["DOCUMENTS", "单据生成", "录入合同、箱单与发票信息，并导出所需 PDF。"],
+        customer: ["MASTER DATA", "客户管理", "维护客户抬头、联系人、地址和导出默认信息。"],
+        manager: ["MASTER DATA", "客户经理", "维护业务人员资料，用于合同和单据输出。"],
+        product: ["MASTER DATA", "产品管理", "维护产品规格、单位、单桶净重和默认包装信息。"],
+        company: ["MASTER DATA", "贸易户头", "维护出口公司信息、LOGO 和单据抬头。"],
+        config: ["SETTINGS", "条款配置", "维护付款条款、模板规则和基础参数。"]
+      };
+
+      const navButtons = document.querySelectorAll(".nav-button");
+      const documentPage = document.getElementById("documentPage");
+      const tablePage = document.getElementById("tablePage");
+      const exportActions = document.getElementById("exportActions");
+      const eyebrow = document.getElementById("eyebrow");
+      const pageTitle = document.getElementById("pageTitle");
+      const pageSubtitle = document.getElementById("pageSubtitle");
+
+      navButtons.forEach((button) => {
+        button.addEventListener("click", () => {
+          navButtons.forEach((item) => item.classList.remove("active"));
+          button.classList.add("active");
+          const page = button.dataset.page;
+          const [label, title, subtitle] = titles[page];
+          eyebrow.textContent = label;
+          pageTitle.textContent = title;
+          pageSubtitle.textContent = subtitle;
+          const isDocument = page === "document";
+          documentPage.classList.toggle("active", isDocument);
+          tablePage.classList.toggle("active", !isDocument);
+          exportActions.style.display = isDocument ? "flex" : "none";
+        });
+      });
+
+      const modalLayer = document.getElementById("modalLayer");
+      const openModal = document.getElementById("openModal");
+      const viewRow = document.getElementById("viewRow");
+      const closeModal = document.getElementById("closeModal");
+      const closeModal2 = document.getElementById("closeModal2");
+
+      [openModal, viewRow].forEach((button) => {
+        button.addEventListener("click", () => modalLayer.classList.add("active"));
+      });
+      [closeModal, closeModal2, modalLayer].forEach((item) => {
+        item.addEventListener("click", (event) => {
+          if (event.target === item) modalLayer.classList.remove("active");
+        });
+      });
+    </script>
+  </body>
+</html>
