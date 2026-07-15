@@ -4235,3 +4235,149 @@ body {
   background-size: 16px 16px;
   background-repeat: no-repeat;
 }
+
+.login-shell {
+  display: grid;
+  min-height: 100vh;
+  place-items: center;
+  padding: 32px;
+  background:
+    linear-gradient(135deg, rgba(32, 51, 49, 0.92), rgba(47, 94, 88, 0.88)),
+    #203331;
+}
+
+.login-panel {
+  display: grid;
+  gap: 20px;
+  width: min(420px, 100%);
+  padding: 34px;
+  color: #17202a;
+  background: #ffffff;
+  border: 1px solid #dbe5e1;
+  border-radius: 8px;
+  box-shadow: 0 28px 80px rgba(7, 22, 20, 0.34);
+}
+
+.login-mark {
+  display: grid;
+  place-items: center;
+  width: 58px;
+  height: 58px;
+  color: #ffffff;
+  background: #1f6b5f;
+  border-radius: 8px;
+}
+
+.login-heading {
+  display: grid;
+  gap: 4px;
+}
+
+.login-heading span {
+  color: #65736f;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+.login-heading h1 {
+  margin: 0;
+  font-size: 28px;
+  line-height: 1.2;
+}
+
+.login-field {
+  display: grid;
+  gap: 8px;
+}
+
+.login-field span {
+  color: #35433f;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.login-field input {
+  width: 100%;
+  height: 46px;
+  padding: 0 14px;
+  color: #17202a;
+  background: #f8fbfa;
+  border: 1px solid #c8d5d1;
+  border-radius: 6px;
+  outline: none;
+}
+
+.login-field input:focus {
+  border-color: #1f6b5f;
+  box-shadow: 0 0 0 3px rgba(31, 107, 95, 0.16);
+}
+
+.login-error {
+  margin: 0;
+  padding: 10px 12px;
+  color: #8b1f18;
+  background: #fff1ef;
+  border: 1px solid #f2c2bc;
+  border-radius: 6px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.login-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 46px;
+  color: #ffffff;
+  cursor: pointer;
+  background: #1f6b5f;
+  border: 0;
+  border-radius: 6px;
+  font-weight: 700;
+}
+
+.login-button:hover:not(:disabled) {
+  background: #17564d;
+}
+
+.login-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
+.sidebar-logout {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 42px;
+  margin-top: auto;
+  padding: 10px 12px;
+  color: #c9d9d5;
+  cursor: pointer;
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 6px;
+  text-align: left;
+}
+
+.sidebar-logout:hover {
+  color: #ffffff;
+  background: #2d4945;
+}
+
+.sidebar-toggle {
+  margin-top: 0;
+}
+
+.sidebar-collapsed .sidebar-logout {
+  justify-content: center;
+  padding-right: 0;
+  padding-left: 0;
+}
+
+.sidebar-collapsed .sidebar-logout span {
+  display: none;
+}

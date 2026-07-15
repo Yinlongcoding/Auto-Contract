@@ -9,7 +9,10 @@ import {
   FileSpreadsheet,
   GripVertical,
   Info,
+  KeyRound,
   ListChecks,
+  LogIn,
+  LogOut,
   Package,
   PanelLeftClose,
   PanelLeftOpen,
@@ -21,7 +24,7 @@ import {
   Users,
   X,
 } from "lucide-react";
-import { createContext, type ReactNode, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, type FormEvent, type ReactNode, useContext, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { isTauriRuntime, tauriApi } from "@/lib/desktop-api";
 
@@ -102,6 +105,27 @@ type AppMessageDialogState = {
   cancelText?: string;
   resolve: (confirmed: boolean) => void;
 };
+
+type LoginCredentialRecord = {
+  credential?: string | number;
+  code?: string | number;
+  validFrom?: string;
+  validUntil?: string;
+  expiresAt?: string;
+  enabled?: boolean;
+};
+
+type LoginCredentialsFile = {
+  credentials?: LoginCredentialRecord[];
+};
+
+type LoginVerificationResult =
+  | { status: "valid" }
+  | { status: "invalid"; message: string }
+  | { status: "expired"; message: string }
+  | { status: "notYetValid"; message: string };
+
+const LOGIN_CREDENTIALS_URL = "https://raw.githubusercontent.com/Yinlongcoding/Auto-Contract/main/auth/login-credentials.json";
 
 const AppAlertContext = createContext<(message: string, title?: string, tone?: AppMessageDialogState["tone"]) => void>(() => undefined);
 
@@ -246,6 +270,10 @@ const titles: Record<SectionId | TermSectionId, string> = {
 };
 
 export function App() {
+  const [authState, setAuthState] = useState<"signedOut" | "signedIn">("signedOut");
+  const [loginCredential, setLoginCredential] = useState("");
+  const [loginError, setLoginError] = useState("");
+  const [loginChecking, setLoginChecking] = useState(false);
   const [activeSection, setActiveSection] = useState<SectionId>("contract");
   const [collapsed, setCollapsed] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -296,8 +324,35 @@ export function App() {
   const balanceAmount = totalAmount - advanceAmount;
 
   useEffect(() => {
-    refreshAll();
-  }, []);
+    if (authState === "signedIn") {
+      refreshAll();
+    }
+  }, [authState]);
+
+  async function handleLogin() {
+    setLoginError("");
+    setLoginChecking(true);
+    try {
+      const result = await verifyLoginCredential(loginCredential);
+      if (result.status === "valid") {
+        setAuthState("signedIn");
+        setLoginCredential("");
+        return;
+      }
+      setLoginError(result.message);
+    } catch (error) {
+      setLoginError(`无法读取 GitHub 登录凭证集合：${String(error)}`);
+    } finally {
+      setLoginChecking(false);
+    }
+  }
+
+  function handleLogout() {
+    setAuthState("signedOut");
+    setLoginCredential("");
+    setLoginError("");
+    setActiveSection("contract");
+  }
 
   async function refreshAll() {
     const tables: TableName[] = [
@@ -504,6 +559,21 @@ export function App() {
     dialog.resolve(confirmed);
   }
 
+  if (authState !== "signedIn") {
+    return (
+      <LoginScreen
+        checking={loginChecking}
+        credential={loginCredential}
+        error={loginError}
+        onCredentialChange={(value) => {
+          setLoginCredential(value.replace(/\D/g, ""));
+          setLoginError("");
+        }}
+        onSubmit={handleLogin}
+      />
+    );
+  }
+
   return (
     <AppAlertContext.Provider value={showAlert}>
       <div className={`app-shell${collapsed ? " sidebar-collapsed" : ""}`}>
@@ -530,6 +600,10 @@ export function App() {
             );
           })}
         </nav>
+        <button className="sidebar-logout" onClick={handleLogout}>
+          <LogOut size={18} />
+          <span>退出登录</span>
+        </button>
         <button className="sidebar-toggle" onClick={() => setCollapsed((value) => !value)}>
           {collapsed ? <PanelLeftOpen size={20} /> : <PanelLeftClose size={20} />}
         </button>
@@ -767,6 +841,101 @@ export function App() {
       </div>
     </AppAlertContext.Provider>
   );
+}
+
+function LoginScreen({
+  checking,
+  credential,
+  error,
+  onCredentialChange,
+  onSubmit,
+}: {
+  checking: boolean;
+  credential: string;
+  error: string;
+  onCredentialChange: (value: string) => void;
+  onSubmit: () => void;
+}) {
+  function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!checking) {
+      onSubmit();
+    }
+  }
+
+  return (
+    <main className="login-shell">
+      <form className="login-panel" onSubmit={submit}>
+        <div className="login-mark">
+          <KeyRound size={30} />
+        </div>
+        <div className="login-heading">
+          <span>Auto Contract</span>
+          <h1>登录凭证</h1>
+        </div>
+        <label className="login-field">
+          <span>请输入数字凭证</span>
+          <input
+            autoFocus
+            inputMode="numeric"
+            pattern="[0-9]*"
+            placeholder="例如 20260715"
+            value={credential}
+            onChange={(event) => onCredentialChange(event.target.value)}
+          />
+        </label>
+        {error ? <p className="login-error">{error}</p> : null}
+        <button className="login-button" disabled={checking || !credential.trim()} type="submit">
+          <LogIn size={18} />
+          <span>{checking ? "正在校验" : "登录"}</span>
+        </button>
+      </form>
+    </main>
+  );
+}
+
+async function verifyLoginCredential(input: string): Promise<LoginVerificationResult> {
+  const credential = input.trim();
+  if (!/^\d+$/.test(credential)) {
+    return { status: "invalid", message: "登录凭证仅支持数字。" };
+  }
+
+  const response = await fetch(`${LOGIN_CREDENTIALS_URL}?t=${Date.now()}`, {
+    cache: "no-store",
+    headers: { Accept: "application/json" },
+  });
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}`);
+  }
+
+  const payload = (await response.json()) as LoginCredentialsFile;
+  if (!Array.isArray(payload.credentials)) {
+    throw new Error("凭证集合格式不正确。");
+  }
+
+  const record = payload.credentials.find((item) => {
+    const itemCredential = String(item.credential ?? item.code ?? "").trim();
+    return item.enabled !== false && itemCredential === credential;
+  });
+  if (!record) {
+    return { status: "invalid", message: "登录凭证无效。" };
+  }
+
+  const validFrom = record.validFrom ? Date.parse(record.validFrom) : Number.NEGATIVE_INFINITY;
+  const validUntil = Date.parse(record.validUntil ?? record.expiresAt ?? "");
+  if (!Number.isFinite(validFrom) || Number.isNaN(validUntil)) {
+    return { status: "invalid", message: "登录凭证配置缺少有效时间。" };
+  }
+
+  const now = Date.now();
+  if (now < validFrom) {
+    return { status: "notYetValid", message: "登录凭证尚未生效。" };
+  }
+  if (now > validUntil) {
+    return { status: "expired", message: "登录凭证已过期。" };
+  }
+
+  return { status: "valid" };
 }
 
 function AppMessageDialog({
