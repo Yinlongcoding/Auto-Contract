@@ -108,26 +108,18 @@ type AppMessageDialogState = {
   resolve: (confirmed: boolean) => void;
 };
 
-type LoginCredentialRecord = {
-  credential?: string | number;
-  code?: string | number;
-  validFrom?: string;
-  validUntil?: string;
-  expiresAt?: string;
-  enabled?: boolean;
-};
-
-type LoginCredentialsFile = {
-  credentials?: LoginCredentialRecord[];
-};
-
 type LoginVerificationResult =
   | { status: "valid" }
   | { status: "invalid"; message: string }
   | { status: "expired"; message: string }
   | { status: "notYetValid"; message: string };
 
-const LOGIN_CREDENTIALS_URL = "https://raw.githubusercontent.com/Yinlongcoding/Auto-Contract/main/auth/login-credentials.json";
+type LoginVerificationResponse = {
+  valid?: boolean;
+  message?: string;
+};
+
+const LOGIN_VERIFY_URL = "https://auto-contract-auth.wnhoper.workers.dev/verify-login";
 const LOGIN_WINDOW_SIZE = new LogicalSize(452, 392);
 const MAIN_WINDOW_SIZE = new LogicalSize(1280, 820);
 const MAIN_WINDOW_MIN_SIZE = new LogicalSize(1080, 680);
@@ -1023,47 +1015,32 @@ function LoginScreen({
 async function verifyLoginCredential(input: string): Promise<LoginVerificationResult> {
   const credential = input.trim();
   if (!/^\d+$/.test(credential)) {
-    return { status: "invalid", message: "登录凭证仅支持数字。" };
+    return { status: "invalid", message: "Login credential must be numeric." };
   }
 
-  const response = await fetch(`${LOGIN_CREDENTIALS_URL}?t=${Date.now()}`, {
+  const response = await fetch(LOGIN_VERIFY_URL, {
+    method: "POST",
     cache: "no-store",
-    headers: { Accept: "application/json" },
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ credential }),
   });
   if (!response.ok) {
     throw new Error(`HTTP ${response.status}`);
   }
 
-  const payload = (await response.json()) as LoginCredentialsFile;
-  if (!Array.isArray(payload.credentials)) {
-    throw new Error("凭证集合格式不正确。");
+  const payload = (await response.json()) as LoginVerificationResponse;
+  if (payload.valid) {
+    return { status: "valid" };
   }
 
-  const record = payload.credentials.find((item) => {
-    const itemCredential = String(item.credential ?? item.code ?? "").trim();
-    return item.enabled !== false && itemCredential === credential;
-  });
-  if (!record) {
-    return { status: "invalid", message: "登录凭证无效。" };
-  }
-
-  const validFrom = record.validFrom ? Date.parse(record.validFrom) : Number.NEGATIVE_INFINITY;
-  const validUntil = Date.parse(record.validUntil ?? record.expiresAt ?? "");
-  if (!Number.isFinite(validFrom) || Number.isNaN(validUntil)) {
-    return { status: "invalid", message: "登录凭证配置缺少有效时间。" };
-  }
-
-  const now = Date.now();
-  if (now < validFrom) {
-    return { status: "notYetValid", message: "登录凭证尚未生效。" };
-  }
-  if (now > validUntil) {
-    return { status: "expired", message: "登录凭证已过期。" };
-  }
-
-  return { status: "valid" };
+  return {
+    status: "invalid",
+    message: payload.message || "Login credential is invalid.",
+  };
 }
-
 function AppMessageDialog({
   dialog,
   onCancel,

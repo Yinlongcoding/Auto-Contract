@@ -3,6 +3,8 @@ dist/
 build/
 
 src-tauri/target/
+.wrangler/
+**/.wrangler/
 
 .vs/
 .vscode/
@@ -14,6 +16,11 @@ src-tauri/target/
 *.corrupt.txt
 
 scripts/legacy-backup/
+
+auth/login-credentials.json
+auth/*.secret.json
+auth/*.bulk.json
+workers/auth/src/worker-configuration.d.ts
 
 .DS_Store
 Thumbs.db
