@@ -683,31 +683,77 @@ fn build_xlsx_from_template(
 
 #[cfg(target_os = "windows")]
 fn convert_xlsx_to_pdf(xlsx_path: &PathBuf, pdf_path: &PathBuf) -> Result<(), String> {
+    let mut errors = Vec::new();
+    let com_exporters = [
+        ("Microsoft Excel", "Excel.Application"),
+        ("WPS 表格", "Ket.Application"),
+        ("WPS 表格", "KET.Application"),
+        ("WPS 表格", "Et.Application"),
+    ];
+
+    for (display_name, prog_id) in com_exporters {
+        match convert_xlsx_to_pdf_with_com(display_name, prog_id, xlsx_path, pdf_path) {
+            Ok(()) => return Ok(()),
+            Err(error) => errors.push(error),
+        }
+    }
+
+    match convert_xlsx_to_pdf_with_libreoffice(xlsx_path, pdf_path) {
+        Ok(()) => Ok(()),
+        Err(error) => {
+            errors.push(error);
+            Err(format!(
+                "PDF 导出失败：未能调用 Microsoft Excel、WPS 表格或 LibreOffice 完成转换。请安装其中任意一个软件后重试，或手动打开保留的 xlsx 文件另存为 PDF。{}",
+                format_export_errors(&errors)
+            ))
+        }
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn convert_xlsx_to_pdf_with_com(
+    display_name: &str,
+    prog_id: &str,
+    xlsx_path: &PathBuf,
+    pdf_path: &PathBuf,
+) -> Result<(), String> {
+    let _ = fs::remove_file(pdf_path);
     let script = format!(
         r#"
 $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $OutputEncoding = [System.Text.Encoding]::UTF8
-$excel = $null
+$app = $null
 $workbook = $null
 try {{
-  $excel = New-Object -ComObject Excel.Application
-  $excel.Visible = $false
-  $excel.DisplayAlerts = $false
-  $workbook = $excel.Workbooks.Open('{}')
-  $workbook.ExportAsFixedFormat(0, '{}')
+  $xlsxPath = '{}'
+  $pdfPath = '{}'
+  $app = New-Object -ComObject '{}'
+  try {{ $app.Visible = $false }} catch {{}}
+  try {{ $app.DisplayAlerts = $false }} catch {{}}
+  try {{ $app.AskToUpdateLinks = $false }} catch {{}}
+  try {{ $app.EnableEvents = $false }} catch {{}}
+  try {{ $app.AutomationSecurity = 3 }} catch {{}}
+  try {{
+    $workbook = $app.Workbooks.Open($xlsxPath, 0, $true)
+  }} catch {{
+    $workbook = $app.Workbooks.Open($xlsxPath)
+  }}
+  try {{ $workbook.CheckCompatibility = $false }} catch {{}}
+  $workbook.ExportAsFixedFormat(0, $pdfPath)
 }} catch {{
   Write-Output $_.Exception.Message
   exit 1
 }} finally {{
   if ($workbook -ne $null) {{ $workbook.Close($false) | Out-Null }}
-  if ($excel -ne $null) {{ $excel.Quit() | Out-Null }}
+  if ($app -ne $null) {{ $app.Quit() | Out-Null }}
   if ($workbook -ne $null) {{ [System.Runtime.InteropServices.Marshal]::ReleaseComObject($workbook) | Out-Null }}
-  if ($excel -ne $null) {{ [System.Runtime.InteropServices.Marshal]::ReleaseComObject($excel) | Out-Null }}
+  if ($app -ne $null) {{ [System.Runtime.InteropServices.Marshal]::ReleaseComObject($app) | Out-Null }}
 }}
 "#,
         escape_powershell_single_quoted_path(xlsx_path),
         escape_powershell_single_quoted_path(pdf_path),
+        escape_powershell_single_quoted_value(prog_id),
     );
 
     let output = Command::new("powershell")
@@ -719,27 +765,111 @@ try {{
             &script,
         ])
         .output()
-        .map_err(|error| error.to_string())?;
+        .map_err(|error| format!("{display_name} 启动失败：{error}"))?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         let stdout = String::from_utf8_lossy(&output.stdout);
         let detail = format!("{}{}", stdout.trim(), stderr.trim());
         return Err(format!(
-            "PDF 导出失败：Excel 无法打开或导出生成的 xlsx 文件。{}",
-            if detail.is_empty() {
-                String::new()
-            } else {
-                format!("详细信息：{detail}")
-            }
+            "{display_name} 导出失败：{}",
+            readable_detail(&detail)
         ));
     }
 
     if !pdf_path.exists() {
-        return Err("PDF 导出失败，未找到生成的 PDF 文件。".into());
+        return Err(format!("{display_name} 导出失败：未找到生成的 PDF 文件。"));
     }
 
     Ok(())
+}
+
+#[cfg(target_os = "windows")]
+fn convert_xlsx_to_pdf_with_libreoffice(
+    xlsx_path: &PathBuf,
+    pdf_path: &PathBuf,
+) -> Result<(), String> {
+    let soffice_path = find_libreoffice_executable()
+        .ok_or_else(|| "LibreOffice 导出失败：未找到 soffice 可执行文件。".to_string())?;
+    let output_dir = pdf_path
+        .parent()
+        .ok_or_else(|| "LibreOffice 导出失败：PDF 输出目录无效。".to_string())?;
+    let _ = fs::remove_file(pdf_path);
+
+    let output = Command::new(&soffice_path)
+        .args([
+            "--headless",
+            "--convert-to",
+            "pdf",
+            "--outdir",
+            &output_dir.to_string_lossy(),
+            &xlsx_path.to_string_lossy(),
+        ])
+        .output()
+        .map_err(|error| format!("LibreOffice 启动失败：{error}"))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let detail = format!("{}{}", stdout.trim(), stderr.trim());
+        return Err(format!(
+            "LibreOffice 导出失败：{}",
+            readable_detail(&detail)
+        ));
+    }
+
+    let generated_pdf_path = xlsx_path.with_extension("pdf");
+    if generated_pdf_path != *pdf_path && generated_pdf_path.exists() {
+        fs::rename(&generated_pdf_path, pdf_path)
+            .map_err(|error| format!("LibreOffice 导出成功但重命名 PDF 失败：{error}"))?;
+    }
+
+    if !pdf_path.exists() {
+        return Err("LibreOffice 导出失败：未找到生成的 PDF 文件。".into());
+    }
+
+    Ok(())
+}
+
+#[cfg(target_os = "windows")]
+fn find_libreoffice_executable() -> Option<PathBuf> {
+    let candidates = [
+        PathBuf::from("soffice.com"),
+        PathBuf::from("soffice.exe"),
+        PathBuf::from(r"C:\Program Files\LibreOffice\program\soffice.com"),
+        PathBuf::from(r"C:\Program Files\LibreOffice\program\soffice.exe"),
+        PathBuf::from(r"C:\Program Files (x86)\LibreOffice\program\soffice.com"),
+        PathBuf::from(r"C:\Program Files (x86)\LibreOffice\program\soffice.exe"),
+    ];
+
+    candidates.into_iter().find(|candidate| {
+        if candidate.is_absolute() {
+            candidate.exists()
+        } else {
+            Command::new(candidate)
+                .arg("--version")
+                .output()
+                .map(|output| output.status.success())
+                .unwrap_or(false)
+        }
+    })
+}
+
+fn readable_detail(detail: &str) -> String {
+    let trimmed = detail.trim();
+    if trimmed.is_empty() {
+        "未返回详细错误。".into()
+    } else {
+        format!("详细信息：{trimmed}")
+    }
+}
+
+fn format_export_errors(errors: &[String]) -> String {
+    if errors.is_empty() {
+        String::new()
+    } else {
+        format!(" 尝试记录：{}", errors.join("；"))
+    }
 }
 
 #[cfg(not(target_os = "windows"))]
@@ -812,6 +942,10 @@ fn convert_xlsx_to_pdf(_xlsx_path: &PathBuf, _pdf_path: &PathBuf) -> Result<(), 
 
 fn escape_powershell_single_quoted_path(path: &PathBuf) -> String {
     path.to_string_lossy().replace('\'', "''")
+}
+
+fn escape_powershell_single_quoted_value(value: &str) -> String {
+    value.replace('\'', "''")
 }
 
 #[cfg(target_os = "windows")]

@@ -1,6 +1,6 @@
 [package]
 name = "auto-contact-desktop"
-version = "1.0.1"
+version = "1.0.11"
 description = "外贸单据生成桌面应用"
 authors = ["YS"]
 edition = "2021"
