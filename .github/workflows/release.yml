@@ -1,0 +1,54 @@
+name: Release Windows App
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag, for example v1.0.1"
+        required: true
+        default: "v1.0.1"
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: npm
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build and publish Tauri release
+        uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          tagName: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+          releaseName: "Auto Contract ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}"
+          releaseBody: "Windows installer and updater files."
+          releaseDraft: false
+          prerelease: false
+          releaseCommitish: ${{ github.sha }}
+          generateReleaseNotes: true
+          retryAttempts: 3
+          uploadUpdaterJson: true
+          uploadUpdaterSignatures: true
+          updaterJsonPreferNsis: true

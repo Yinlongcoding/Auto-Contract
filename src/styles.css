@@ -112,7 +112,7 @@
 
 body {
   margin: 0;
-  min-width: 1080px;
+  min-width: 0;
   min-height: 100vh;
   font-family: var(--app-font-family);
 }
@@ -138,6 +138,7 @@ input:not([type="checkbox"]):not([type="radio"]):not([type="file"]) {
 .app-shell {
   display: grid;
   grid-template-columns: 260px 1fr;
+  min-width: 1080px;
   min-height: 100vh;
   transition: grid-template-columns 180ms ease;
 }
@@ -187,6 +188,16 @@ input:not([type="checkbox"]):not([type="radio"]):not([type="file"]) {
 .brand span {
   color: #a9beb9;
   font-size: 12px;
+}
+
+.brand-logo {
+  flex: 0 0 auto;
+  width: 38px;
+  height: 38px;
+  object-fit: cover;
+  border: 1px solid rgba(144, 205, 255, 0.18);
+  border-radius: 8px;
+  box-shadow: 0 0 16px rgba(34, 211, 238, 0.16);
 }
 
 .nav-list {
@@ -3232,7 +3243,7 @@ body {
 }
 
 .product-table-panel .product-management-table {
-  min-width: 1040px;
+  min-width: 920px;
 }
 
 .port-table-panel .port-management-table {
@@ -3284,19 +3295,19 @@ body {
 }
 
 .product-col-name {
-  width: 28%;
+  width: 25%;
 }
 
 .product-col-hscode {
-  width: 13%;
+  width: 12%;
 }
 
 .product-col-purity {
-  width: 15%;
+  width: 13%;
 }
 
 .product-col-package {
-  width: 15%;
+  width: 13%;
 }
 
 .product-col-cas {
@@ -3304,7 +3315,7 @@ body {
 }
 
 .product-col-action {
-  width: 132px;
+  width: 124px;
 }
 
 .port-col-sequence {
@@ -3416,8 +3427,12 @@ body {
 }
 
 .product-table-panel .action-cell {
-  padding-right: 10px;
-  padding-left: 10px;
+  padding-right: 18px;
+  padding-left: 8px;
+}
+
+.product-table-panel .icon-table-actions {
+  justify-content: flex-start;
 }
 
 .product-table-panel .icon-only-action {
@@ -4236,18 +4251,36 @@ body {
   background-repeat: no-repeat;
 }
 
+.window-frame {
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  background: var(--workspace-bg);
+}
+
+.window-frame > .app-shell {
+  height: 100%;
+  min-height: 0;
+}
+
+.window-frame > .login-shell,
+.window-frame > .app-loading-shell {
+  min-height: 100%;
+}
+
 .login-shell {
   display: grid;
   min-height: 100vh;
   place-items: center;
-  padding: 32px;
+  padding: 12px 16px;
   background: var(--workspace-bg);
 }
 
 .login-panel {
   display: grid;
   gap: 20px;
-  width: min(420px, 100%);
+  width: 100%;
+  min-height: 320px;
   padding: 28px;
   color: var(--ink);
   background: var(--surface);
@@ -4261,10 +4294,17 @@ body {
   place-items: center;
   width: 58px;
   height: 58px;
-  color: var(--brand);
-  background: var(--brand-soft);
   border: 1px solid #90cdff;
   border-radius: 6px;
+  overflow: hidden;
+  background: #020617;
+  box-shadow: 0 0 20px rgba(34, 211, 238, 0.16);
+}
+
+.login-mark img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
 .login-heading {
@@ -4349,37 +4389,50 @@ body {
   opacity: 0.58;
 }
 
-.sidebar-logout {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  width: 100%;
-  min-height: 42px;
-  margin-top: auto;
-  padding: 10px 12px;
-  color: #c9d9d5;
-  cursor: pointer;
-  background: transparent;
-  border: 1px solid rgba(255, 255, 255, 0.16);
+.app-loading-shell {
+  display: grid;
+  min-height: 100vh;
+  place-items: center;
+  padding: 32px;
+  background: var(--workspace-bg);
+}
+
+.app-loading-panel {
+  display: grid;
+  justify-items: center;
+  gap: 18px;
+  min-width: 240px;
+  padding: 30px 34px;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: 0 18px 44px rgba(15, 23, 42, 0.1);
+  text-align: center;
+}
+
+.app-loading-panel span {
+  display: block;
+  color: var(--brand);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 14px;
+  letter-spacing: 0.02em;
+}
+
+.app-loading-panel h1 {
+  margin: 4px 0 0;
+  color: var(--ink);
+  font-size: 24px;
+  font-weight: 600;
+  line-height: 32px;
+}
+
+.app-loading-logo {
+  width: 58px;
+  height: 58px;
+  object-fit: cover;
+  border: 1px solid #90cdff;
   border-radius: 6px;
-  text-align: left;
-}
-
-.sidebar-logout:hover {
-  color: #ffffff;
-  background: rgba(148, 163, 184, 0.14);
-}
-
-.sidebar-toggle {
-  margin-top: 0;
-}
-
-.sidebar-collapsed .sidebar-logout {
-  justify-content: center;
-  padding-right: 0;
-  padding-left: 0;
-}
-
-.sidebar-collapsed .sidebar-logout span {
-  display: none;
+  box-shadow: 0 0 20px rgba(34, 211, 238, 0.16);
 }

@@ -9,10 +9,8 @@ import {
   FileSpreadsheet,
   GripVertical,
   Info,
-  KeyRound,
   ListChecks,
   LogIn,
-  LogOut,
   Package,
   PanelLeftClose,
   PanelLeftOpen,
@@ -27,6 +25,10 @@ import {
 import { createContext, type FormEvent, type ReactNode, useContext, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { isTauriRuntime, tauriApi } from "@/lib/desktop-api";
+import { LogicalSize } from "@tauri-apps/api/dpi";
+import { getCurrentWindow } from "@tauri-apps/api/window";
+import { relaunch } from "@tauri-apps/plugin-process";
+import { check } from "@tauri-apps/plugin-updater";
 
 type TableName =
   | "companies"
@@ -126,6 +128,9 @@ type LoginVerificationResult =
   | { status: "notYetValid"; message: string };
 
 const LOGIN_CREDENTIALS_URL = "https://raw.githubusercontent.com/Yinlongcoding/Auto-Contract/main/auth/login-credentials.json";
+const LOGIN_WINDOW_SIZE = new LogicalSize(452, 392);
+const MAIN_WINDOW_SIZE = new LogicalSize(1280, 820);
+const MAIN_WINDOW_MIN_SIZE = new LogicalSize(1080, 680);
 
 const AppAlertContext = createContext<(message: string, title?: string, tone?: AppMessageDialogState["tone"]) => void>(() => undefined);
 
@@ -171,6 +176,7 @@ const api = isTauriRuntime
 const today = new Date().toISOString().slice(0, 10);
 const defaultExpiryDate = addDays(today, 90);
 const customerTypeOptions = ["终端客户", "贸易商"] as const;
+let updateCheckStarted = false;
 
 const sections: Array<{ id: SectionId; label: string; icon: typeof FileSpreadsheet }> = [
   { id: "contract", label: "单据生成", icon: FileSpreadsheet },
@@ -269,8 +275,79 @@ const titles: Record<SectionId | TermSectionId, string> = {
   termConfigurations: "条款配置",
 };
 
+function installDesktopShortcutGuards() {
+  const blockEvent = (event: Event) => {
+    event.preventDefault();
+    event.stopPropagation();
+  };
+
+  const onKeyDown = (event: KeyboardEvent) => {
+    if (shouldBlockDesktopShortcut(event)) {
+      blockEvent(event);
+    }
+  };
+
+  const onMouseNavigation = (event: MouseEvent) => {
+    if (event.button === 3 || event.button === 4) {
+      blockEvent(event);
+    }
+  };
+
+  const onContextMenu = (event: MouseEvent) => blockEvent(event);
+
+  window.addEventListener("keydown", onKeyDown, true);
+  window.addEventListener("contextmenu", onContextMenu, true);
+  window.addEventListener("mousedown", onMouseNavigation, true);
+  window.addEventListener("auxclick", onMouseNavigation, true);
+
+  return () => {
+    window.removeEventListener("keydown", onKeyDown, true);
+    window.removeEventListener("contextmenu", onContextMenu, true);
+    window.removeEventListener("mousedown", onMouseNavigation, true);
+    window.removeEventListener("auxclick", onMouseNavigation, true);
+  };
+}
+
+function shouldBlockDesktopShortcut(event: KeyboardEvent) {
+  const key = event.key.toLowerCase();
+  const code = event.code.toLowerCase();
+  const command = event.ctrlKey || event.metaKey;
+  const refreshKeys = key === "f5" || key === "browserrefresh" || code === "browserrefresh" || (command && key === "r");
+  const devtoolsKeys =
+    key === "f12" ||
+    (command && event.shiftKey && ["i", "j", "c", "k"].includes(key)) ||
+    (command && event.altKey && key === "i");
+  const browserNavigationKeys =
+    key === "browserback" ||
+    key === "browserforward" ||
+    code === "browserback" ||
+    code === "browserforward" ||
+    (event.altKey && (key === "arrowleft" || key === "arrowright"));
+  const sourceKeys = command && key === "u";
+
+  return refreshKeys || devtoolsKeys || browserNavigationKeys || sourceKeys;
+}
+
+async function checkForAppUpdate() {
+  if (!isTauriRuntime || updateCheckStarted) {
+    return;
+  }
+
+  updateCheckStarted = true;
+  try {
+    const update = await check();
+    if (!update) {
+      return;
+    }
+    await update.downloadAndInstall();
+    await relaunch();
+  } catch (error) {
+    console.error("Failed to check for app updates", error);
+  }
+}
+
 export function App() {
-  const [authState, setAuthState] = useState<"signedOut" | "signedIn">("signedOut");
+  const [authState, setAuthState] = useState<"signedOut" | "loadingApp" | "signedIn">("signedOut");
   const [loginCredential, setLoginCredential] = useState("");
   const [loginError, setLoginError] = useState("");
   const [loginChecking, setLoginChecking] = useState(false);
@@ -324,10 +401,13 @@ export function App() {
   const balanceAmount = totalAmount - advanceAmount;
 
   useEffect(() => {
-    if (authState === "signedIn") {
-      refreshAll();
-    }
-  }, [authState]);
+    void prepareLoginWindow().catch(console.error);
+    void checkForAppUpdate();
+  }, []);
+
+  useEffect(() => {
+    return installDesktopShortcutGuards();
+  }, []);
 
   async function handleLogin() {
     setLoginError("");
@@ -335,23 +415,21 @@ export function App() {
     try {
       const result = await verifyLoginCredential(loginCredential);
       if (result.status === "valid") {
-        setAuthState("signedIn");
         setLoginCredential("");
+        setAuthState("loadingApp");
+        setLoginChecking(false);
+        await prepareMainWindow();
+        await refreshAll();
+        setAuthState("signedIn");
         return;
       }
       setLoginError(result.message);
     } catch (error) {
-      setLoginError(`无法读取 GitHub 登录凭证集合：${String(error)}`);
+      setAuthState("signedOut");
+      setLoginError(`登录或加载失败：${String(error)}`);
     } finally {
       setLoginChecking(false);
     }
-  }
-
-  function handleLogout() {
-    setAuthState("signedOut");
-    setLoginCredential("");
-    setLoginError("");
-    setActiveSection("contract");
   }
 
   async function refreshAll() {
@@ -559,27 +637,38 @@ export function App() {
     dialog.resolve(confirmed);
   }
 
+  if (authState === "loadingApp") {
+    return (
+      <WindowFrame compact>
+        <AppLoadingScreen />
+      </WindowFrame>
+    );
+  }
+
   if (authState !== "signedIn") {
     return (
-      <LoginScreen
-        checking={loginChecking}
-        credential={loginCredential}
-        error={loginError}
-        onCredentialChange={(value) => {
-          setLoginCredential(value.replace(/\D/g, ""));
-          setLoginError("");
-        }}
-        onSubmit={handleLogin}
-      />
+      <WindowFrame compact>
+        <LoginScreen
+          checking={loginChecking}
+          credential={loginCredential}
+          error={loginError}
+          onCredentialChange={(value) => {
+            setLoginCredential(value.replace(/\D/g, ""));
+            setLoginError("");
+          }}
+          onSubmit={handleLogin}
+        />
+      </WindowFrame>
     );
   }
 
   return (
-    <AppAlertContext.Provider value={showAlert}>
-      <div className={`app-shell${collapsed ? " sidebar-collapsed" : ""}`}>
+    <WindowFrame>
+      <AppAlertContext.Provider value={showAlert}>
+        <div className={`app-shell${collapsed ? " sidebar-collapsed" : ""}`}>
       <aside className="sidebar">
         <div className="brand">
-          <FileSpreadsheet size={28} />
+          <img className="brand-logo" src="/app-logo.png" alt="Auto Contract logo" />
           <div className="brand-copy">
             <strong>外贸单据生成器</strong>
             <span>合同 / PI / 基础资料</span>
@@ -600,10 +689,6 @@ export function App() {
             );
           })}
         </nav>
-        <button className="sidebar-logout" onClick={handleLogout}>
-          <LogOut size={18} />
-          <span>退出登录</span>
-        </button>
         <button className="sidebar-toggle" onClick={() => setCollapsed((value) => !value)}>
           {collapsed ? <PanelLeftOpen size={20} /> : <PanelLeftClose size={20} />}
         </button>
@@ -838,8 +923,49 @@ export function App() {
           onConfirm={() => closeAppMessageDialog(true)}
         />
       ) : null}
+        </div>
+      </AppAlertContext.Provider>
+    </WindowFrame>
+  );
+}
+
+function WindowFrame({ children, compact = false }: { children: ReactNode; compact?: boolean }) {
+  return <div className={`window-frame${compact ? " compact" : ""}`}>{children}</div>;
+}
+
+async function prepareLoginWindow() {
+  if (!isTauriRuntime) return;
+  const window = getCurrentWindow();
+  await window.setResizable(false);
+  await window.setMaximizable(false);
+  await window.setMinimizable(false);
+  await window.setMinSize(LOGIN_WINDOW_SIZE);
+  await window.setSize(LOGIN_WINDOW_SIZE);
+  await window.center();
+}
+
+async function prepareMainWindow() {
+  if (!isTauriRuntime) return;
+  const window = getCurrentWindow();
+  await window.setResizable(true);
+  await window.setMaximizable(true);
+  await window.setMinimizable(true);
+  await window.setMinSize(MAIN_WINDOW_MIN_SIZE);
+  await window.setSize(MAIN_WINDOW_SIZE);
+  await window.center();
+}
+
+function AppLoadingScreen() {
+  return (
+    <main className="app-loading-shell" aria-live="polite" aria-busy="true">
+      <div className="app-loading-panel">
+        <img className="app-loading-logo" src="/app-logo.png" alt="Auto Contract logo" />
+        <div>
+          <span>Auto Contract</span>
+          <h1>Loading</h1>
+        </div>
       </div>
-    </AppAlertContext.Provider>
+    </main>
   );
 }
 
@@ -867,7 +993,7 @@ function LoginScreen({
     <main className="login-shell">
       <form className="login-panel" onSubmit={submit}>
         <div className="login-mark">
-          <KeyRound size={30} />
+          <img src="/app-logo.png" alt="Auto Contract logo" />
         </div>
         <div className="login-heading">
           <span>Auto Contract</span>

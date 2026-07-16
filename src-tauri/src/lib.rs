@@ -18,7 +18,7 @@ use tauri::{AppHandle, Manager, State};
 use zip::{write::FileOptions, ZipArchive, ZipWriter};
 
 struct Database {
-    connection: Mutex<Connection>,
+    connection: Mutex<Option<Connection>>,
     path: String,
 }
 
@@ -79,6 +79,45 @@ const TABLE_NAMES: [&str; 10] = [
     "term_configuration_items",
     "contracts",
 ];
+
+#[cfg(windows)]
+fn apply_native_titlebar_style(window: &tauri::WebviewWindow) {
+    use std::mem::size_of;
+    use windows::Win32::Graphics::Dwm::{
+        DwmSetWindowAttribute, DWMWA_BORDER_COLOR, DWMWA_CAPTION_COLOR, DWMWA_TEXT_COLOR,
+    };
+
+    let Ok(hwnd) = window.hwnd() else {
+        return;
+    };
+
+    let caption_color: u32 = 0x002a170f; // COLORREF for #0f172a.
+    let text_color: u32 = 0x00fcfaf8; // COLORREF for #f8fafc.
+
+    unsafe {
+        let _ = DwmSetWindowAttribute(
+            hwnd,
+            DWMWA_CAPTION_COLOR,
+            &caption_color as *const _ as _,
+            size_of::<u32>() as u32,
+        );
+        let _ = DwmSetWindowAttribute(
+            hwnd,
+            DWMWA_BORDER_COLOR,
+            &caption_color as *const _ as _,
+            size_of::<u32>() as u32,
+        );
+        let _ = DwmSetWindowAttribute(
+            hwnd,
+            DWMWA_TEXT_COLOR,
+            &text_color as *const _ as _,
+            size_of::<u32>() as u32,
+        );
+    }
+}
+
+#[cfg(not(windows))]
+fn apply_native_titlebar_style(_window: &tauri::WebviewWindow) {}
 
 fn table_fields() -> HashMap<&'static str, &'static [&'static str]> {
     HashMap::from([
@@ -210,6 +249,24 @@ fn from_sql_value(value: ValueRef<'_>) -> Value {
     }
 }
 
+fn with_database_connection<T>(
+    database: State<'_, Database>,
+    task: impl FnOnce(&mut Connection) -> Result<T, String>,
+) -> Result<T, String> {
+    let mut connection = database
+        .connection
+        .lock()
+        .map_err(|error| error.to_string())?;
+    if connection.is_none() {
+        *connection = Some(open_database(PathBuf::from(&database.path))?);
+    }
+    task(
+        connection
+            .as_mut()
+            .ok_or_else(|| "Database connection is not available".to_string())?,
+    )
+}
+
 #[tauri::command]
 fn db_meta(database: State<'_, Database>) -> DatabaseMeta {
     DatabaseMeta {
@@ -223,34 +280,32 @@ fn db_list(database: State<'_, Database>, table_name: String) -> Result<Vec<Valu
     if !TABLE_NAMES.contains(&table_name.as_str()) {
         return Err(format!("Unknown table: {table_name}"));
     }
-    let connection = database
-        .connection
-        .lock()
-        .map_err(|error| error.to_string())?;
-    let order_by = if table_name == "term_configuration_items" {
-        "config_id DESC, sort_order ASC, id ASC"
-    } else {
-        "id DESC"
-    };
-    let mut statement = connection
-        .prepare(&format!("SELECT * FROM {table_name} ORDER BY {order_by}"))
-        .map_err(|error| error.to_string())?;
-    let column_names = statement
-        .column_names()
-        .iter()
-        .map(|name| (*name).to_string())
-        .collect::<Vec<_>>();
-    let rows = statement
-        .query_map([], |row| {
-            let mut object = Map::new();
-            for (index, name) in column_names.iter().enumerate() {
-                object.insert(name.clone(), from_sql_value(row.get_ref(index)?));
-            }
-            Ok(Value::Object(object))
-        })
-        .map_err(|error| error.to_string())?;
-    rows.collect::<Result<Vec<_>, _>>()
-        .map_err(|error| error.to_string())
+    with_database_connection(database, |connection| {
+        let order_by = if table_name == "term_configuration_items" {
+            "config_id DESC, sort_order ASC, id ASC"
+        } else {
+            "id DESC"
+        };
+        let mut statement = connection
+            .prepare(&format!("SELECT * FROM {table_name} ORDER BY {order_by}"))
+            .map_err(|error| error.to_string())?;
+        let column_names = statement
+            .column_names()
+            .iter()
+            .map(|name| (*name).to_string())
+            .collect::<Vec<_>>();
+        let rows = statement
+            .query_map([], |row| {
+                let mut object = Map::new();
+                for (index, name) in column_names.iter().enumerate() {
+                    object.insert(name.clone(), from_sql_value(row.get_ref(index)?));
+                }
+                Ok(Value::Object(object))
+            })
+            .map_err(|error| error.to_string())?;
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(|error| error.to_string())
+    })
 }
 
 #[tauri::command]
@@ -269,15 +324,13 @@ fn db_create(
         .iter()
         .map(|field| to_sql_value(&payload[field]))
         .collect::<Vec<_>>();
-    let connection = database
-        .connection
-        .lock()
-        .map_err(|error| error.to_string())?;
-    connection
-        .execute(&sql, params_from_iter(values))
-        .map_err(|error| error.to_string())?;
-    Ok(IdResult {
-        id: connection.last_insert_rowid(),
+    with_database_connection(database, |connection| {
+        connection
+            .execute(&sql, params_from_iter(values))
+            .map_err(|error| error.to_string())?;
+        Ok(IdResult {
+            id: connection.last_insert_rowid(),
+        })
     })
 }
 
@@ -300,14 +353,12 @@ fn db_update(
         .map(|field| to_sql_value(&payload[field]))
         .collect::<Vec<_>>();
     values.push(SqlValue::Integer(id));
-    let connection = database
-        .connection
-        .lock()
-        .map_err(|error| error.to_string())?;
-    connection
-        .execute(&sql, params_from_iter(values))
-        .map_err(|error| error.to_string())?;
-    Ok(IdResult { id })
+    with_database_connection(database, |connection| {
+        connection
+            .execute(&sql, params_from_iter(values))
+            .map_err(|error| error.to_string())?;
+        Ok(IdResult { id })
+    })
 }
 
 #[tauri::command]
@@ -324,37 +375,41 @@ fn db_delete_many(
     }
     let placeholders = vec!["?"; ids.len()].join(", ");
     let sql = format!("DELETE FROM {table_name} WHERE id IN ({placeholders})");
-    let mut connection = database
-        .connection
-        .lock()
-        .map_err(|error| error.to_string())?;
-    if table_name == "contract_terms" {
-        let transaction = connection.transaction().map_err(|error| error.to_string())?;
-        transaction
-            .execute(
-                &format!("UPDATE contracts SET term_id = NULL WHERE term_id IN ({placeholders})"),
-                params_from_iter(ids.iter().copied()),
-            )
+    with_database_connection(database, |connection| {
+        if table_name == "contract_terms" {
+            let transaction = connection
+                .transaction()
+                .map_err(|error| error.to_string())?;
+            transaction
+                .execute(
+                    &format!(
+                        "UPDATE contracts SET term_id = NULL WHERE term_id IN ({placeholders})"
+                    ),
+                    params_from_iter(ids.iter().copied()),
+                )
+                .map_err(|error| error.to_string())?;
+            transaction
+                .execute(
+                    &format!(
+                        "DELETE FROM term_configuration_items WHERE term_id IN ({placeholders})"
+                    ),
+                    params_from_iter(ids.iter().copied()),
+                )
+                .map_err(|error| error.to_string())?;
+            let count = transaction
+                .execute(
+                    &format!("DELETE FROM contract_terms WHERE id IN ({placeholders})"),
+                    params_from_iter(ids.iter().copied()),
+                )
+                .map_err(|error| error.to_string())?;
+            transaction.commit().map_err(|error| error.to_string())?;
+            return Ok(DeleteResult { count });
+        }
+        let count = connection
+            .execute(&sql, params_from_iter(ids))
             .map_err(|error| error.to_string())?;
-        transaction
-            .execute(
-                &format!("DELETE FROM term_configuration_items WHERE term_id IN ({placeholders})"),
-                params_from_iter(ids.iter().copied()),
-            )
-            .map_err(|error| error.to_string())?;
-        let count = transaction
-            .execute(
-                &format!("DELETE FROM contract_terms WHERE id IN ({placeholders})"),
-                params_from_iter(ids.iter().copied()),
-            )
-            .map_err(|error| error.to_string())?;
-        transaction.commit().map_err(|error| error.to_string())?;
-        return Ok(DeleteResult { count });
-    }
-    let count = connection
-        .execute(&sql, params_from_iter(ids))
-        .map_err(|error| error.to_string())?;
-    Ok(DeleteResult { count })
+        Ok(DeleteResult { count })
+    })
 }
 
 #[tauri::command]
@@ -371,40 +426,38 @@ fn db_replace_term_configuration_items(
         }
     }
 
-    let mut connection = database
-        .connection
-        .lock()
-        .map_err(|error| error.to_string())?;
-    let transaction = connection
-        .transaction()
-        .map_err(|error| error.to_string())?;
-    transaction
-        .execute(
-            "DELETE FROM term_configuration_items WHERE config_id = ?",
-            [config_id],
-        )
-        .map_err(|error| error.to_string())?;
-    {
-        let mut insert = transaction
-            .prepare(
-                "INSERT INTO term_configuration_items (config_id, item_code, term_id, sort_order) VALUES (?, ?, ?, ?)",
+    with_database_connection(database, |connection| {
+        let transaction = connection
+            .transaction()
+            .map_err(|error| error.to_string())?;
+        transaction
+            .execute(
+                "DELETE FROM term_configuration_items WHERE config_id = ?",
+                [config_id],
             )
             .map_err(|error| error.to_string())?;
-        for item in &items {
-            insert
-                .execute(params![
-                    config_id,
-                    item.item_code.trim(),
-                    item.term_id,
-                    item.sort_order
-                ])
+        {
+            let mut insert = transaction
+                .prepare(
+                    "INSERT INTO term_configuration_items (config_id, item_code, term_id, sort_order) VALUES (?, ?, ?, ?)",
+                )
                 .map_err(|error| error.to_string())?;
+            for item in &items {
+                insert
+                    .execute(params![
+                        config_id,
+                        item.item_code.trim(),
+                        item.term_id,
+                        item.sort_order
+                    ])
+                    .map_err(|error| error.to_string())?;
+            }
         }
-    }
-    transaction.commit().map_err(|error| error.to_string())?;
-    Ok(ReplaceResult {
-        config_id,
-        count: items.len(),
+        transaction.commit().map_err(|error| error.to_string())?;
+        Ok(ReplaceResult {
+            config_id,
+            count: items.len(),
+        })
     })
 }
 
@@ -1058,7 +1111,7 @@ fn sanitize_filename(value: &str) -> String {
     }
 }
 
-fn initialize_database(path: PathBuf) -> Result<Database, String> {
+fn open_database(path: PathBuf) -> Result<Connection, String> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|error| error.to_string())?;
     }
@@ -1155,10 +1208,7 @@ fn initialize_database(path: PathBuf) -> Result<Database, String> {
     )?;
     seed_database(&connection)?;
 
-    Ok(Database {
-        connection: Mutex::new(connection),
-        path: path.to_string_lossy().into_owned(),
-    })
+    Ok(connection)
 }
 
 fn migrate_column(
@@ -1266,13 +1316,21 @@ fn seed_database(connection: &Connection) -> Result<(), String> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
             let data_dir = app
                 .path()
                 .app_data_dir()
                 .map_err(|error| error.to_string())?;
-            let database = initialize_database(data_dir.join("data").join("ys-documents.sqlite"))?;
-            app.manage(database);
+            let database_path = data_dir.join("data").join("ys-documents.sqlite");
+            app.manage(Database {
+                connection: Mutex::new(None),
+                path: database_path.to_string_lossy().into_owned(),
+            });
+            if let Some(window) = app.get_webview_window("main") {
+                apply_native_titlebar_style(&window);
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

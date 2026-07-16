@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "外贸单据生成器",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "identifier": "com.zzyschemical.autocontract",
   "build": {
     "beforeDevCommand": "npm run dev:web",
@@ -13,10 +13,11 @@
     "windows": [
       {
         "title": "外贸单据生成器",
-        "width": 1280,
-        "height": 820,
-        "minWidth": 1080,
-        "minHeight": 680,
+        "width": 452,
+        "height": 392,
+        "minWidth": 452,
+        "minHeight": 392,
+        "devtools": false,
         "backgroundColor": "#f5f6f8"
       }
     ],
@@ -27,8 +28,25 @@
   "bundle": {
     "active": true,
     "targets": ["nsis"],
+    "createUpdaterArtifacts": true,
+    "windows": {
+      "nsis": {
+        "installerHooks": "./windows/hooks.nsh"
+      }
+    },
     "resources": [
       "../templates/*"
     ]
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDM3MTBCNEY0OUNBNDAzMQpSV1F4UU1wSlR3dHhBN0IwcUZNMit3SERNRHFBU2VydmtBU0N2OTdmanhST3lCdE5DMEhoYmFnMwo=",
+      "endpoints": [
+        "https://github.com/Yinlongcoding/Auto-Contract/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
+    }
   }
 }
