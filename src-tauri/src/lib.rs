@@ -17,6 +17,12 @@ use std::{
 use tauri::{AppHandle, Manager, State};
 use zip::{write::FileOptions, ZipArchive, ZipWriter};
 
+#[cfg(target_os = "windows")]
+use std::os::windows::process::CommandExt;
+
+#[cfg(target_os = "windows")]
+const CREATE_NO_WINDOW: u32 = 0x08000000;
+
 struct Database {
     connection: Mutex<Option<Connection>>,
     path: String,
@@ -756,7 +762,9 @@ try {{
         escape_powershell_single_quoted_value(prog_id),
     );
 
-    let output = Command::new("powershell")
+    let mut command = Command::new("powershell");
+    hide_command_window(&mut command);
+    let output = command
         .args([
             "-NoProfile",
             "-ExecutionPolicy",
@@ -796,7 +804,9 @@ fn convert_xlsx_to_pdf_with_libreoffice(
         .ok_or_else(|| "LibreOffice 导出失败：PDF 输出目录无效。".to_string())?;
     let _ = fs::remove_file(pdf_path);
 
-    let output = Command::new(&soffice_path)
+    let mut command = Command::new(&soffice_path);
+    hide_command_window(&mut command);
+    let output = command
         .args([
             "--headless",
             "--convert-to",
@@ -846,7 +856,9 @@ fn find_libreoffice_executable() -> Option<PathBuf> {
         if candidate.is_absolute() {
             candidate.exists()
         } else {
-            Command::new(candidate)
+            let mut command = Command::new(candidate);
+            hide_command_window(&mut command);
+            command
                 .arg("--version")
                 .output()
                 .map(|output| output.status.success())
@@ -870,6 +882,11 @@ fn format_export_errors(errors: &[String]) -> String {
     } else {
         format!(" 尝试记录：{}", errors.join("；"))
     }
+}
+
+#[cfg(target_os = "windows")]
+fn hide_command_window(command: &mut Command) {
+    command.creation_flags(CREATE_NO_WINDOW);
 }
 
 #[cfg(not(target_os = "windows"))]
@@ -908,7 +925,9 @@ try {{
         escape_powershell_single_quoted_path(pdf_path),
     );
 
-    let output = Command::new("powershell")
+    let mut command = Command::new("powershell");
+    hide_command_window(&mut command);
+    let output = command
         .args([
             "-NoProfile",
             "-ExecutionPolicy",
@@ -984,7 +1003,9 @@ try {{
         escape_powershell_single_quoted_path(pdf_path),
     );
 
-    let output = Command::new("powershell")
+    let mut command = Command::new("powershell");
+    hide_command_window(&mut command);
+    let output = command
         .args([
             "-NoProfile",
             "-ExecutionPolicy",

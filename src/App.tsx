@@ -27,7 +27,7 @@ import { Button } from "@/components/ui/button";
 import { isTauriRuntime, tauriApi } from "@/lib/desktop-api";
 import { LogicalSize } from "@tauri-apps/api/dpi";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { relaunch } from "@tauri-apps/plugin-process";
+import { exit, relaunch } from "@tauri-apps/plugin-process";
 import { check } from "@tauri-apps/plugin-updater";
 
 type TableName =
@@ -320,7 +320,7 @@ function shouldBlockDesktopShortcut(event: KeyboardEvent) {
   return refreshKeys || devtoolsKeys || browserNavigationKeys || sourceKeys;
 }
 
-async function checkForAppUpdate() {
+async function checkForAppUpdate(confirmUpdate: () => Promise<boolean>) {
   if (!isTauriRuntime || updateCheckStarted) {
     return;
   }
@@ -329,6 +329,11 @@ async function checkForAppUpdate() {
   try {
     const update = await check();
     if (!update) {
+      return;
+    }
+    const shouldUpdate = await confirmUpdate();
+    if (!shouldUpdate) {
+      await exit(0);
       return;
     }
     await update.downloadAndInstall();
@@ -394,7 +399,14 @@ export function App() {
 
   useEffect(() => {
     void prepareLoginWindow().catch(console.error);
-    void checkForAppUpdate();
+    void checkForAppUpdate(() =>
+      showConfirm("检测到新版本，是否立即下载并安装？如果取消，应用将自动关闭。", {
+        title: "发现新版本",
+        confirmText: "下载并安装",
+        cancelText: "关闭应用",
+        tone: "warning",
+      }),
+    );
   }, []);
 
   useEffect(() => {
@@ -586,6 +598,7 @@ export function App() {
     try {
       await task();
     } catch (error) {
+      setLoading(false);
       await showAlert(String(error), "操作失败", "error");
     } finally {
       setLoading(false);
