@@ -51,14 +51,26 @@ export const tauriApi = {
   generateContractPdf(payload: GenerateContractPayload) {
     return invoke<{ path: string }>("generate_contract_pdf", { payload });
   },
+  generateContractExcel(payload: GenerateContractPayload) {
+    return invoke<{ path: string }>("generate_contract_excel", { payload });
+  },
   generatePiPdf(payload: GenerateContractPayload) {
     return invoke<{ path: string }>("generate_pi_pdf", { payload });
+  },
+  generatePiExcel(payload: GenerateContractPayload) {
+    return invoke<{ path: string }>("generate_pi_excel", { payload });
   },
   generatePackingListPdf(payload: GenerateContractPayload) {
     return invoke<{ path: string }>("generate_packing_list_pdf", { payload });
   },
+  generatePackingListExcel(payload: GenerateContractPayload) {
+    return invoke<{ path: string }>("generate_packing_list_excel", { payload });
+  },
   generateCommercialInvoicePdf(payload: GenerateContractPayload) {
     return invoke<{ path: string }>("generate_commercial_invoice_pdf", { payload });
+  },
+  generateCommercialInvoiceExcel(payload: GenerateContractPayload) {
+    return invoke<{ path: string }>("generate_commercial_invoice_excel", { payload });
   },
   openGeneratedContract(path: string) {
     return invoke<void>("open_generated_contract", { path });

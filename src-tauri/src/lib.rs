@@ -138,6 +138,8 @@ fn table_fields() -> HashMap<&'static str, &'static [&'static str]> {
                 "bank_name_cn",
                 "swift_code",
                 "usd_account",
+                "tel",
+                "account_description",
                 "content",
                 "logo_data",
             ][..],
@@ -165,9 +167,9 @@ fn table_fields() -> HashMap<&'static str, &'static [&'static str]> {
                 "name_en",
                 "name_cn",
                 "hs_code",
+                "product_description",
                 "model",
                 "kgs_per_drum",
-                "cas",
                 "is_drug_precursor",
             ][..],
         ),
@@ -203,6 +205,7 @@ fn table_fields() -> HashMap<&'static str, &'static [&'static str]> {
                 "customer_manager_id",
                 "purchase_no",
                 "drum_count",
+                "gross_weight_per_drum",
             ][..],
         ),
     ])
@@ -411,6 +414,27 @@ fn db_delete_many(
             transaction.commit().map_err(|error| error.to_string())?;
             return Ok(DeleteResult { count });
         }
+        if table_name == "term_configurations" {
+            let transaction = connection
+                .transaction()
+                .map_err(|error| error.to_string())?;
+            transaction
+                .execute(
+                    &format!(
+                        "DELETE FROM term_configuration_items WHERE config_id IN ({placeholders})"
+                    ),
+                    params_from_iter(ids.iter().copied()),
+                )
+                .map_err(|error| error.to_string())?;
+            let count = transaction
+                .execute(
+                    &format!("DELETE FROM term_configurations WHERE id IN ({placeholders})"),
+                    params_from_iter(ids.iter().copied()),
+                )
+                .map_err(|error| error.to_string())?;
+            transaction.commit().map_err(|error| error.to_string())?;
+            return Ok(DeleteResult { count });
+        }
         let count = connection
             .execute(&sql, params_from_iter(ids))
             .map_err(|error| error.to_string())?;
@@ -467,13 +491,7 @@ fn db_replace_term_configuration_items(
     })
 }
 
-#[tauri::command]
-fn generate_contract_pdf(
-    app: AppHandle,
-    payload: ContractExcelPayload,
-) -> Result<GeneratedContractResult, String> {
-    let template_path = find_contract_template(&app)?;
-
+fn generated_output_dir(app: &AppHandle) -> Result<PathBuf, String> {
     let output_dir = app
         .path()
         .document_dir()
@@ -481,6 +499,71 @@ fn generate_contract_pdf(
         .map_err(|error| error.to_string())?
         .join("YS Contracts");
     fs::create_dir_all(&output_dir).map_err(|error| error.to_string())?;
+    Ok(output_dir)
+}
+
+fn generate_xlsx_file(
+    app: AppHandle,
+    payload: ContractExcelPayload,
+    template_name: &str,
+    filename_suffix: &str,
+    is_pi_template: bool,
+) -> Result<GeneratedContractResult, String> {
+    let template_path = find_template(&app, template_name)?;
+    let output_dir = generated_output_dir(&app)?;
+    let filename = if filename_suffix.is_empty() {
+        sanitize_filename(&payload.contract_no)
+    } else {
+        sanitize_filename(&format!("{}_{}", payload.contract_no, filename_suffix))
+    };
+    let xlsx_path = output_dir.join(format!("{filename}.xlsx"));
+    let output = build_xlsx_from_template(&template_path, &payload, true, is_pi_template)?;
+    fs::write(&xlsx_path, output).map_err(|error| error.to_string())?;
+    Ok(GeneratedContractResult {
+        path: xlsx_path.to_string_lossy().into_owned(),
+    })
+}
+
+#[tauri::command]
+fn generate_contract_excel(
+    app: AppHandle,
+    payload: ContractExcelPayload,
+) -> Result<GeneratedContractResult, String> {
+    generate_xlsx_file(app, payload, "Sales Contract Template.xlsx", "", false)
+}
+
+#[tauri::command]
+fn generate_pi_excel(
+    app: AppHandle,
+    payload: ContractExcelPayload,
+) -> Result<GeneratedContractResult, String> {
+    generate_xlsx_file(app, payload, "PI Template.xlsx", "PI", true)
+}
+
+#[tauri::command]
+fn generate_packing_list_excel(
+    app: AppHandle,
+    payload: ContractExcelPayload,
+) -> Result<GeneratedContractResult, String> {
+    generate_xlsx_file(app, payload, "Packing List Template.xlsx", "PL", false)
+}
+
+#[tauri::command]
+fn generate_commercial_invoice_excel(
+    app: AppHandle,
+    payload: ContractExcelPayload,
+) -> Result<GeneratedContractResult, String> {
+    generate_xlsx_file(app, payload, "Commercial Invoice Template.xlsx", "CI", false)
+}
+
+#[tauri::command]
+fn generate_contract_pdf(
+    app: AppHandle,
+    payload: ContractExcelPayload,
+) -> Result<GeneratedContractResult, String> {
+    let template_path = find_contract_template(&app)?;
+
+    let output_dir = generated_output_dir(&app)?;
 
     let filename = sanitize_filename(&payload.contract_no);
     let pdf_path = output_dir.join(format!("{filename}.pdf"));
@@ -513,13 +596,7 @@ fn generate_pi_pdf(
 ) -> Result<GeneratedContractResult, String> {
     let template_path = find_pi_template(&app)?;
 
-    let output_dir = app
-        .path()
-        .document_dir()
-        .or_else(|_| app.path().app_data_dir())
-        .map_err(|error| error.to_string())?
-        .join("YS Contracts");
-    fs::create_dir_all(&output_dir).map_err(|error| error.to_string())?;
+    let output_dir = generated_output_dir(&app)?;
 
     let filename = sanitize_filename(&format!("{}_PI", payload.contract_no));
     let pdf_path = output_dir.join(format!("{filename}.pdf"));
@@ -552,13 +629,7 @@ fn generate_shipping_pdf(
     filename_suffix: &str,
 ) -> Result<GeneratedContractResult, String> {
     let template_path = find_template(&app, template_name)?;
-    let output_dir = app
-        .path()
-        .document_dir()
-        .or_else(|_| app.path().app_data_dir())
-        .map_err(|error| error.to_string())?
-        .join("YS Contracts");
-    fs::create_dir_all(&output_dir).map_err(|error| error.to_string())?;
+    let output_dir = generated_output_dir(&app)?;
     let filename = sanitize_filename(&format!("{}_{}", payload.contract_no, filename_suffix));
     let pdf_path = output_dir.join(format!("{filename}.pdf"));
     let temp_xlsx_path = output_dir.join(format!("{filename}.exporting.xlsx"));
@@ -1284,7 +1355,7 @@ fn open_database(path: PathBuf) -> Result<Connection, String> {
             CREATE TABLE IF NOT EXISTS companies (
               id INTEGER PRIMARY KEY AUTOINCREMENT, company_name_en TEXT NOT NULL, company_name_cn TEXT,
               address TEXT, bank_name_en TEXT, bank_name_cn TEXT, swift_code TEXT, usd_account TEXT,
-              content TEXT, logo_data TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+              tel TEXT, account_description TEXT, content TEXT, logo_data TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
             );
             CREATE TABLE IF NOT EXISTS customers (
               id INTEGER PRIMARY KEY AUTOINCREMENT, company_name_en TEXT NOT NULL, company_name_cn TEXT,
@@ -1297,7 +1368,7 @@ fn open_database(path: PathBuf) -> Result<Connection, String> {
             );
             CREATE TABLE IF NOT EXISTS products (
               id INTEGER PRIMARY KEY AUTOINCREMENT, name_en TEXT NOT NULL, name_cn TEXT, hs_code TEXT,
-              model TEXT, is_drug_precursor INTEGER NOT NULL DEFAULT 0, kgs_per_drum REAL, cas TEXT,
+              product_description TEXT, model TEXT, is_drug_precursor INTEGER NOT NULL DEFAULT 0, kgs_per_drum REAL, cas TEXT,
               created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
             );
             CREATE TABLE IF NOT EXISTS ports (
@@ -1328,6 +1399,7 @@ fn open_database(path: PathBuf) -> Result<Connection, String> {
               balance_amount REAL NOT NULL DEFAULT 0, destination_port TEXT, loading_port TEXT,
               trade_terms TEXT, expiry_date TEXT, palletized TEXT, customer_manager_id INTEGER,
               purchase_no TEXT, pi_expiry_date TEXT, drum_count REAL NOT NULL DEFAULT 0,
+              gross_weight_per_drum REAL NOT NULL DEFAULT 0,
               created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
               FOREIGN KEY (buyer_id) REFERENCES customers(id),
               FOREIGN KEY (seller_id) REFERENCES companies(id),
@@ -1343,9 +1415,12 @@ fn open_database(path: PathBuf) -> Result<Connection, String> {
     migrate_column(&connection, "contracts", "palletized", "TEXT")?;
     migrate_column(&connection, "contracts", "term_configuration_id", "INTEGER")?;
     migrate_column(&connection, "products", "cas", "TEXT")?;
+    migrate_column(&connection, "products", "product_description", "TEXT")?;
     migrate_column(&connection, "customers", "country_cn", "TEXT")?;
     migrate_column(&connection, "customers", "customer_type", "TEXT")?;
     migrate_column(&connection, "companies", "logo_data", "TEXT")?;
+    migrate_column(&connection, "companies", "tel", "TEXT")?;
+    migrate_column(&connection, "companies", "account_description", "TEXT")?;
     migrate_column(
         &connection,
         "term_configuration_items",
@@ -1359,6 +1434,12 @@ fn open_database(path: PathBuf) -> Result<Connection, String> {
         &connection,
         "contracts",
         "drum_count",
+        "REAL NOT NULL DEFAULT 0",
+    )?;
+    migrate_column(
+        &connection,
+        "contracts",
+        "gross_weight_per_drum",
         "REAL NOT NULL DEFAULT 0",
     )?;
     seed_database(&connection)?;
@@ -1495,9 +1576,13 @@ pub fn run() {
             db_update,
             db_delete_many,
             db_replace_term_configuration_items,
+            generate_contract_excel,
             generate_contract_pdf,
+            generate_pi_excel,
             generate_pi_pdf,
+            generate_packing_list_excel,
             generate_packing_list_pdf,
+            generate_commercial_invoice_excel,
             generate_commercial_invoice_pdf,
             open_generated_contract
         ])

@@ -61,11 +61,14 @@ type ContractDraft = {
   pi_expiry_date: string;
   palletized: "" | "yes" | "no";
   drum_count: string;
+  gross_weight_per_drum: string;
   purchase_no: string;
   purchase_no_touched: string;
 };
 
 type ContractPreview = ReturnType<typeof buildContractPreviewFromRows>;
+type ExportFileType = "excel" | "pdf";
+type ExportDocumentKind = "contract" | "pi" | "pl" | "ci";
 
 type SectionId =
   | "contract"
@@ -151,14 +154,26 @@ const api = isTauriRuntime
       async generateContractPdf(): Promise<{ path: string }> {
         throw new Error("请在桌面应用中生成合同 PDF。");
       },
+      async generateContractExcel(): Promise<{ path: string }> {
+        throw new Error("请在桌面应用中生成合同 Excel。");
+      },
       async generatePiPdf(): Promise<{ path: string }> {
         throw new Error("请在桌面应用中生成 PI PDF。");
+      },
+      async generatePiExcel(): Promise<{ path: string }> {
+        throw new Error("请在桌面应用中生成 PI Excel。");
       },
       async generatePackingListPdf(): Promise<{ path: string }> {
         throw new Error("请在桌面应用中生成箱单 PDF。");
       },
+      async generatePackingListExcel(): Promise<{ path: string }> {
+        throw new Error("请在桌面应用中生成箱单 Excel。");
+      },
       async generateCommercialInvoicePdf(): Promise<{ path: string }> {
         throw new Error("请在桌面应用中生成发票 PDF。");
+      },
+      async generateCommercialInvoiceExcel(): Promise<{ path: string }> {
+        throw new Error("请在桌面应用中生成发票 Excel。");
       },
       async openGeneratedContract() {
         throw new Error("请在桌面应用中打开文件。");
@@ -167,7 +182,7 @@ const api = isTauriRuntime
 
 const today = new Date().toISOString().slice(0, 10);
 const defaultExpiryDate = addDays(today, 90);
-const customerTypeOptions = ["终端客户", "贸易商"] as const;
+const customerTypeOptions = ["终端客户", "贸易商", "工贸一体"] as const;
 let updateCheckStarted = false;
 
 const sections: Array<{ id: SectionId; label: string; icon: typeof FileSpreadsheet }> = [
@@ -210,12 +225,12 @@ const fieldDefinitions: Record<DataSectionId, FieldDefinition[]> = {
     { key: "email", label: "邮箱" },
   ],
   products: [
+    { key: "product_description", label: "产品说明", type: "textarea" },
     { key: "name_en", label: "品名 EN" },
     { key: "name_cn", label: "品名 CN" },
     { key: "hs_code", label: "HSCODE" },
     { key: "model", label: "纯度/规格" },
     { key: "kgs_per_drum", label: "装桶规格 KG/桶", type: "number" },
-    { key: "cas", label: "CAS" },
     { key: "is_drug_precursor", label: "是否易制毒前体", type: "yesno" },
   ],
   ports: [
@@ -223,8 +238,10 @@ const fieldDefinitions: Record<DataSectionId, FieldDefinition[]> = {
     { key: "name_cn", label: "港口信息 CN" },
   ],
   companies: [
+    { key: "account_description", label: "户头说明", type: "textarea" },
     { key: "company_name_en", label: "公司名称 EN" },
     { key: "company_name_cn", label: "公司名称 CN" },
+    { key: "tel", label: "Tel" },
     { key: "address", label: "地址", type: "textarea" },
     { key: "bank_name_en", label: "开户行 EN" },
     { key: "bank_name_cn", label: "开户行 CN" },
@@ -247,9 +264,9 @@ const fieldDefinitions: Record<DataSectionId, FieldDefinition[]> = {
 const tableColumns: Record<DataSectionId, string[]> = {
   customers: ["company_name_en", "customer_type", "country_cn", "email", "contact_person"],
   customerManagers: ["name", "phone", "email"],
-  products: ["name_en", "name_cn", "hs_code", "model", "kgs_per_drum", "cas"],
+  products: ["product_description", "name_en", "name_cn", "hs_code", "model", "kgs_per_drum"],
   ports: ["name_en", "name_cn"],
-  companies: ["company_name_cn", "company_name_en", "bank_name_en", "swift_code", "usd_account"],
+  companies: ["account_description", "company_name_cn", "bank_name_en", "swift_code", "usd_account"],
   terms: ["term_code", "content_cn", "content_en"],
   termConfigurations: ["config_no", "config_date"],
 };
@@ -386,6 +403,7 @@ export function App() {
     pi_expiry_date: today,
     palletized: "",
     drum_count: "0",
+    gross_weight_per_drum: "",
     purchase_no: "",
     purchase_no_touched: "no",
   });
@@ -508,7 +526,7 @@ export function App() {
       await showAlert(validationMessage);
       return;
     }
-    const payload = contractDraftToPayload(contract, balanceAmount);
+    const payload = contractDraftToPayload(contract, balanceAmount, data);
     const existing = data.contracts.find((row) => String(row.contract_no || "") === contract.contract_no.trim());
     if (existing?.id) {
       const shouldOverwrite = await showConfirm(`存在重复合同编号${contract.contract_no.trim()}，保存将覆盖原有方案，是否继续保存？`, {
@@ -545,50 +563,54 @@ export function App() {
     return preview;
   }
 
-  async function generateContract() {
+  async function generateContract(fileType: ExportFileType = "pdf") {
     const preview = await requirePreview();
     if (!preview) return;
     await withLoading(async () => {
       const logoData = preview.seller.logo_data ? await imageSourceToPngDataUrl(preview.seller.logo_data) : "";
-      const result = await api.generateContractPdf({
+      const payload = {
         contractNo: preview.contractNo,
         fields: buildContractExcelFields(preview),
         logoData,
-      });
+      };
+      const result = fileType === "excel" ? await api.generateContractExcel(payload) : await api.generateContractPdf(payload);
       setGeneratedPath(result.path);
     });
   }
 
-  async function generatePi() {
+  async function generatePi(fileType: ExportFileType = "pdf") {
     const preview = await requirePreview();
     if (!preview) return;
     await withLoading(async () => {
       const logoData = preview.seller.logo_data ? await imageSourceToPngDataUrl(preview.seller.logo_data) : "";
-      const result = await api.generatePiPdf({
+      const payload = {
         contractNo: preview.contractNo,
         fields: buildPiExcelFields(preview),
         logoData,
-      });
+      };
+      const result = fileType === "excel" ? await api.generatePiExcel(payload) : await api.generatePiPdf(payload);
       setGeneratedPath(result.path);
     });
   }
 
-  async function generatePackingList() {
+  async function generatePackingList(fileType: ExportFileType = "pdf") {
     const preview = await requirePreview();
     if (!preview) return;
     await withLoading(async () => {
       const logoData = preview.seller.logo_data ? await imageSourceToPngDataUrl(preview.seller.logo_data) : "";
-      const result = await api.generatePackingListPdf({ contractNo: preview.contractNo, fields: buildShippingExcelFields(preview), logoData });
+      const payload = { contractNo: preview.contractNo, fields: buildShippingExcelFields(preview), logoData };
+      const result = fileType === "excel" ? await api.generatePackingListExcel(payload) : await api.generatePackingListPdf(payload);
       setGeneratedPath(result.path);
     });
   }
 
-  async function generateCommercialInvoice() {
+  async function generateCommercialInvoice(fileType: ExportFileType = "pdf") {
     const preview = await requirePreview();
     if (!preview) return;
     await withLoading(async () => {
       const logoData = preview.seller.logo_data ? await imageSourceToPngDataUrl(preview.seller.logo_data) : "";
-      const result = await api.generateCommercialInvoicePdf({ contractNo: preview.contractNo, fields: buildShippingExcelFields(preview), logoData });
+      const payload = { contractNo: preview.contractNo, fields: buildShippingExcelFields(preview), logoData };
+      const result = fileType === "excel" ? await api.generateCommercialInvoiceExcel(payload) : await api.generateCommercialInvoicePdf(payload);
       setGeneratedPath(result.path);
     });
   }
@@ -1114,12 +1136,25 @@ function ContractPanel({
   onChange: (value: ContractDraft) => void;
   onLoadContract: () => void;
   onSaveContract: () => void;
-  onGenerateContract: () => void;
-  onGeneratePi: () => void;
-  onGeneratePackingList: () => void;
-  onGenerateCommercialInvoice: () => void;
+  onGenerateContract: (fileType: ExportFileType) => void;
+  onGeneratePi: (fileType: ExportFileType) => void;
+  onGeneratePackingList: (fileType: ExportFileType) => void;
+  onGenerateCommercialInvoice: (fileType: ExportFileType) => void;
   totalAmount: number;
 }) {
+  const [exportKind, setExportKind] = useState<ExportDocumentKind | null>(null);
+  const selectedProduct = data.products.find((row) => Number(row.id) === Number(contract.product_id));
+  const netWeightPerDrum = Number(selectedProduct?.kgs_per_drum) || 0;
+  const defaultGrossWeightPerDrum = netWeightPerDrum ? netWeightPerDrum + 18 : 0;
+  const grossWeightPerDrum = Number(contract.gross_weight_per_drum || defaultGrossWeightPerDrum) || 0;
+  const drumCount = Number(contract.drum_count) || 0;
+
+  const getDefaultGrossWeight = (productId: string) => {
+    const product = data.products.find((row) => Number(row.id) === Number(productId));
+    const netWeight = Number(product?.kgs_per_drum) || 0;
+    return netWeight ? netWeight + 18 : 0;
+  };
+
   const update = (field: keyof ContractDraft, value: string) => {
     if (field === "contract_no") {
       onChange({
@@ -1133,9 +1168,34 @@ function ContractPanel({
       onChange({ ...contract, purchase_no: value, purchase_no_touched: "yes" });
       return;
     }
+    if (field === "product_id") {
+      const currentGrossWeight = String(contract.gross_weight_per_drum ?? "").trim();
+      const previousDefaultGrossWeight = getDefaultGrossWeight(contract.product_id);
+      const nextDefaultGrossWeight = getDefaultGrossWeight(value);
+      const shouldUseDefault = !currentGrossWeight || Number(currentGrossWeight) === previousDefaultGrossWeight;
+      onChange({
+        ...contract,
+        product_id: value,
+        gross_weight_per_drum: shouldUseDefault ? String(nextDefaultGrossWeight) : currentGrossWeight,
+      });
+      return;
+    }
     onChange({ ...contract, [field]: value });
   };
   const portOptions = data.ports.map((row) => row.name_en).filter(Boolean);
+  const exportDocuments: Record<ExportDocumentKind, { title: string; subtitle: string; action: (fileType: ExportFileType) => void }> = {
+    contract: { title: "合同", subtitle: "Contract", action: onGenerateContract },
+    pi: { title: "PI", subtitle: "Proforma Invoice", action: onGeneratePi },
+    pl: { title: "PL", subtitle: "Packing List", action: onGeneratePackingList },
+    ci: { title: "CI", subtitle: "Commercial Invoice", action: onGenerateCommercialInvoice },
+  };
+
+  function chooseExportType(fileType: ExportFileType) {
+    if (!exportKind) return;
+    const action = exportDocuments[exportKind].action;
+    setExportKind(null);
+    action(fileType);
+  }
 
   return (
     <div className="document-generation-page">
@@ -1160,22 +1220,22 @@ function ContractPanel({
               <ChevronDown size={15} />
             </Button>
             <div className="export-menu-list" role="menu" aria-label="导出 PDF">
-              <button onClick={onGenerateContract} role="menuitem">
+              <button onClick={() => setExportKind("contract")} role="menuitem">
                 <FileSpreadsheet size={16} />
                 <span>合同</span>
                 <em>Contract</em>
               </button>
-              <button onClick={onGeneratePi} role="menuitem">
+              <button onClick={() => setExportKind("pi")} role="menuitem">
                 <ScrollText size={16} />
                 <span>PI</span>
                 <em>Proforma Invoice</em>
               </button>
-              <button onClick={onGeneratePackingList} role="menuitem">
+              <button onClick={() => setExportKind("pl")} role="menuitem">
                 <Package size={16} />
                 <span>PL</span>
                 <em>Packing List</em>
               </button>
-              <button onClick={onGenerateCommercialInvoice} role="menuitem">
+              <button onClick={() => setExportKind("ci")} role="menuitem">
                 <Building2 size={16} />
                 <span>CI</span>
                 <em>Commercial Invoice</em>
@@ -1195,9 +1255,9 @@ function ContractPanel({
             <Field label="合同编码" value={contract.contract_no} onChange={(value) => update("contract_no", value)} />
             <Field label="签订日期" type="date" value={contract.issue_date} onChange={(value) => update("issue_date", value)} />
             <SelectField label="买方信息" rows={data.customers} value={contract.buyer_id} labelKey="company_name_en" onChange={(value) => update("buyer_id", value)} />
-            <SelectField label="贸易户头" rows={data.companies} value={contract.seller_id} labelKey="company_name_cn" fallbackKey="company_name_en" onChange={(value) => update("seller_id", value)} />
+            <SelectField label="贸易户头" rows={data.companies} value={contract.seller_id} labelKey="account_description" fallbackKey="company_name_cn" onChange={(value) => update("seller_id", value)} />
             <SelectField label="客户经理" rows={data.customer_managers} value={contract.customer_manager_id} labelKey="name" onChange={(value) => update("customer_manager_id", value)} />
-            <SelectField label="产品信息" rows={data.products} value={contract.product_id} labelKey="name_en" onChange={(value) => update("product_id", value)} />
+            <SelectField label="产品信息" rows={data.products} value={contract.product_id} labelKey="product_description" fallbackKey="name_en" onChange={(value) => update("product_id", value)} />
             <SelectField label="合同条款配置" rows={data.term_configurations} value={contract.term_configuration_id} labelKey="config_no" onChange={(value) => update("term_configuration_id", value)} />
             <Field label="产品数量" type="number" value={contract.quantity} onChange={(value) => update("quantity", value)} />
             <Field label="单价" type="number" value={contract.unit_price} onChange={(value) => update("unit_price", value)} />
@@ -1230,15 +1290,61 @@ function ContractPanel({
           <div className="form-grid">
             <Field label="PO No." value={contract.purchase_no} onChange={(value) => update("purchase_no", value)} />
             <Field label="装桶数量" type="number" value={contract.drum_count} onChange={(value) => update("drum_count", value)} />
-            <Field label="单桶净重（KG）" value={String(Number(data.products.find((row) => Number(row.id) === Number(contract.product_id))?.kgs_per_drum) || 0)} readOnly />
-            <Field label="总净重（KG）" value={formatQuantity((Number(data.products.find((row) => Number(row.id) === Number(contract.product_id))?.kgs_per_drum) || 0) * (Number(contract.drum_count) || 0))} readOnly />
-            <Field label="单桶毛重（KG）" value={String((Number(data.products.find((row) => Number(row.id) === Number(contract.product_id))?.kgs_per_drum) || 0) + 18)} readOnly />
-            <Field label="总毛重（KG）" value={formatQuantity(((Number(data.products.find((row) => Number(row.id) === Number(contract.product_id))?.kgs_per_drum) || 0) + 18) * (Number(contract.drum_count) || 0))} readOnly />
+            <Field label="单桶净重（KG）" value={String(netWeightPerDrum)} readOnly />
+            <Field label="总净重（KG）" value={formatQuantity(netWeightPerDrum * drumCount)} readOnly />
+            <Field label="单桶毛重（KG）" type="number" value={String(contract.gross_weight_per_drum || defaultGrossWeightPerDrum)} onChange={(value) => update("gross_weight_per_drum", value)} />
+            <Field label="总毛重（KG）" value={formatQuantity(grossWeightPerDrum * drumCount)} readOnly />
             <Field label="单桶尺寸（CBM）" value="0.24" readOnly />
             <Field label="总尺寸（CBM）" value={formatQuantity(0.24 * (Number(contract.drum_count) || 0))} readOnly />
           </div>
         </div>
       </section>
+      {exportKind ? (
+        <ExportTypeDialog
+          documentTitle={exportDocuments[exportKind].title}
+          documentSubtitle={exportDocuments[exportKind].subtitle}
+          onCancel={() => setExportKind(null)}
+          onSelect={chooseExportType}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+function ExportTypeDialog({
+  documentTitle,
+  documentSubtitle,
+  onCancel,
+  onSelect,
+}: {
+  documentTitle: string;
+  documentSubtitle: string;
+  onCancel: () => void;
+  onSelect: (fileType: ExportFileType) => void;
+}) {
+  return (
+    <div className="modal-backdrop">
+      <div className="export-type-dialog" role="dialog" aria-modal="true" aria-labelledby="export-type-title">
+        <div className="modal-header">
+          <div>
+            <h2 id="export-type-title">选择导出类型</h2>
+            <span>{documentTitle} / {documentSubtitle}</span>
+          </div>
+          <button className="modal-close-button" onClick={onCancel}>
+            <X size={20} />
+          </button>
+        </div>
+        <div className="export-type-actions">
+          <button className="secondary-button icon-button-text" onClick={() => onSelect("excel")}>
+            <FileSpreadsheet size={17} />
+            Excel
+          </button>
+          <button className="primary-button icon-button-text" onClick={() => onSelect("pdf")}>
+            <ScrollText size={17} />
+            PDF
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -1401,7 +1507,7 @@ function HistoryDocumentModal({
   const product = products.find((row) => Number(row.id) === Number(contract.product_id));
   const drumCount = Number(contract.drum_count) || 0;
   const netWeightPerDrum = Number(product?.kgs_per_drum) || 0;
-  const grossWeightPerDrum = netWeightPerDrum + 18;
+  const grossWeightPerDrum = Number(contract.gross_weight_per_drum) || netWeightPerDrum + 18;
 
   return (
     <div className="modal-backdrop">
@@ -1652,7 +1758,7 @@ function ProductManagementPanel({
       <header className="page-header">
         <div>
           <h1>产品管理</h1>
-          <p>维护产品品名、HScode、纯度、包装规格和 CAS 信息。</p>
+          <p>维护产品说明、品名、HScode、纯度和包装规格。</p>
         </div>
         <button className="primary-button icon-button-text" onClick={onAdd}>
           <Plus size={17} />
@@ -1663,20 +1769,20 @@ function ProductManagementPanel({
         <div className="customer-table-scroll">
           <table className="customer-table product-management-table">
             <colgroup>
+              <col className="product-col-description" />
               <col className="product-col-name" />
               <col className="product-col-hscode" />
               <col className="product-col-purity" />
               <col className="product-col-package" />
-              <col className="product-col-cas" />
               <col className="product-col-action" />
             </colgroup>
             <thead>
               <tr>
+                <th>产品说明</th>
                 <th>品名</th>
                 <th>HScode</th>
                 <th>纯度</th>
                 <th>包装规格</th>
-                <th>CAS</th>
                 <th className="action-cell">操作</th>
               </tr>
             </thead>
@@ -1694,6 +1800,9 @@ function ProductManagementPanel({
               ) : (
                 rows.map((row) => (
                   <tr key={row.id}>
+                    <td className="product-description-cell" title={String(row.product_description || "")}>
+                      {row.product_description || "-"}
+                    </td>
                     <td className="product-name-cell">
                       <strong title={String(row.name_en || "")}>{row.name_en || "-"}</strong>
                       <span title={String(row.name_cn || "")}>{row.name_cn || "-"}</span>
@@ -1701,7 +1810,6 @@ function ProductManagementPanel({
                     <td>{row.hs_code || "-"}</td>
                     <td>{row.model || "-"}</td>
                     <td>{formatPackaging(row)}</td>
-                    <td>{row.cas || "-"}</td>
                     <td className="action-cell">
                       <div className="table-actions icon-table-actions">
                         <button className="table-action-button icon-only-action" onClick={() => onView(row)} title="查看" aria-label="查看">
@@ -2010,7 +2118,7 @@ function CompanyManagementPanel({
             </colgroup>
             <thead>
               <tr>
-                <th>公司名称</th>
+                <th>户头说明</th>
                 <th>开户行</th>
                 <th>美元账户</th>
                 <th className="action-cell">操作</th>
@@ -2030,8 +2138,8 @@ function CompanyManagementPanel({
               ) : (
                 rows.map((row) => (
                   <tr key={row.id}>
-                    <td className="company-name-cell" title={String(row.company_name_cn || "")}>
-                      <strong>{row.company_name_cn || "-"}</strong>
+                    <td className="company-name-cell" title={String(row.account_description || "")}>
+                      <strong>{row.account_description || "-"}</strong>
                     </td>
                     <td className="company-bank-cell" title={String(row.bank_name_cn || "")}>
                       {row.bank_name_cn || "-"}
@@ -2071,7 +2179,7 @@ function CompanyManagementPanel({
       </section>
       {deleteCandidate ? (
         <DeleteCompanyDialog
-          companyName={String(deleteCandidate.company_name_cn || "该贸易户头")}
+          companyName={String(deleteCandidate.account_description || deleteCandidate.company_name_cn || "该贸易户头")}
           onCancel={() => setDeleteCandidate(null)}
           onConfirm={confirmDelete}
         />
@@ -2122,8 +2230,10 @@ function CompanyModal({
 }) {
   const appAlert = useAppAlert();
   const [form, setForm] = useState<Row>(() => ({
+    account_description: row?.account_description ?? "",
     company_name_en: row?.company_name_en ?? "",
     company_name_cn: row?.company_name_cn ?? "",
+    tel: row?.tel ?? "",
     address: row?.address ?? "",
     bank_name_en: row?.bank_name_en ?? "",
     bank_name_cn: row?.bank_name_cn ?? "",
@@ -2169,6 +2279,8 @@ function CompanyModal({
               <div className="customer-info-grid">
                 <CustomerInfoItem label="公司名称 CN" value={row?.company_name_cn} />
                 <CustomerInfoItem label="公司名称 EN" value={row?.company_name_en} />
+                <CustomerInfoItem label="户头说明" value={row?.account_description} wide />
+                <CustomerInfoItem label="Tel" value={row?.tel} />
                 <CustomerInfoItem label="开户行 CN" value={row?.bank_name_cn} />
                 <CustomerInfoItem label="开户行 EN" value={row?.bank_name_en} />
                 <CustomerInfoItem label="SWIFT CODE" value={row?.swift_code} />
@@ -2186,8 +2298,10 @@ function CompanyModal({
           <>
             <div className="customer-form-layout company-form-layout">
               <div className="customer-form-grid company-modal-form-grid">
+                <TextAreaField label="户头说明" value={String(form.account_description ?? "")} onChange={(value) => update("account_description", value)} placeholder="请输入户头说明" />
                 <Field label="公司名称 CN" value={String(form.company_name_cn ?? "")} onChange={(value) => update("company_name_cn", value)} placeholder="请输入中文公司名称" required />
                 <Field label="公司名称 EN" value={String(form.company_name_en ?? "")} onChange={(value) => update("company_name_en", value)} placeholder="请输入英文公司名称" />
+                <Field label="Tel" value={String(form.tel ?? "")} onChange={(value) => update("tel", value)} placeholder="请输入电话" />
                 <Field label="开户行 CN" value={String(form.bank_name_cn ?? "")} onChange={(value) => update("bank_name_cn", value)} placeholder="请输入中文开户行" />
                 <Field label="开户行 EN" value={String(form.bank_name_en ?? "")} onChange={(value) => update("bank_name_en", value)} placeholder="请输入英文开户行" />
                 <Field label="SWIFT CODE" value={String(form.swift_code ?? "")} onChange={(value) => update("swift_code", value)} placeholder="请输入 SWIFT CODE" />
@@ -2226,12 +2340,12 @@ function ProductModal({
 }) {
   const appAlert = useAppAlert();
   const [form, setForm] = useState<Row>(() => ({
+    product_description: row?.product_description ?? "",
     name_en: row?.name_en ?? "",
     name_cn: row?.name_cn ?? "",
     hs_code: row?.hs_code ?? "",
     model: row?.model ?? "",
     kgs_per_drum: row?.kgs_per_drum ?? "",
-    cas: row?.cas ?? "",
     is_drug_precursor: row?.is_drug_precursor ?? 0,
   }));
 
@@ -2270,12 +2384,12 @@ function ProductModal({
           <div className="customer-detail-layout product-detail-layout">
             <section className="customer-info-card">
               <div className="customer-info-grid">
+                <CustomerInfoItem label="产品说明" value={row?.product_description} wide />
                 <CustomerInfoItem label="品名 EN" value={row?.name_en} />
                 <CustomerInfoItem label="品名 CN" value={row?.name_cn} />
                 <CustomerInfoItem label="HSCODE" value={row?.hs_code} />
                 <CustomerInfoItem label="纯度/规格" value={row?.model} />
                 <CustomerInfoItem label="装桶规格 KG/桶" value={row?.kgs_per_drum} />
-                <CustomerInfoItem label="CAS" value={row?.cas} />
                 <CustomerInfoItem label="是否易制毒前体" value={isDrugPrecursor} wide />
               </div>
             </section>
@@ -2287,12 +2401,12 @@ function ProductModal({
           <>
             <div className="customer-form-layout product-form-layout">
               <div className="customer-form-grid product-modal-form-grid">
+                <TextAreaField label="产品说明" value={String(form.product_description ?? "")} onChange={(value) => update("product_description", value)} placeholder="请输入产品说明" />
                 <Field label="品名 EN" value={String(form.name_en ?? "")} onChange={(value) => update("name_en", value)} placeholder="请输入英文品名" required />
                 <Field label="品名 CN" value={String(form.name_cn ?? "")} onChange={(value) => update("name_cn", value)} placeholder="请输入中文品名" />
                 <Field label="HSCODE" value={String(form.hs_code ?? "")} onChange={(value) => update("hs_code", value)} placeholder="请输入 HSCODE" />
                 <Field label="纯度/规格" value={String(form.model ?? "")} onChange={(value) => update("model", value)} placeholder="请输入纯度或规格" />
                 <Field label="装桶规格 KG/桶" type="number" value={String(form.kgs_per_drum ?? "")} onChange={(value) => update("kgs_per_drum", value)} placeholder="请输入单桶净重" />
-                <Field label="CAS" value={String(form.cas ?? "")} onChange={(value) => update("cas", value)} placeholder="请输入 CAS" />
                 <label className="field product-precursor-field">
                   <span>是否易制毒前体</span>
                   <div className="checkbox-options">
@@ -3595,6 +3709,7 @@ function buildContractPreviewFromRows(
     contractNo: contract.contract_no,
     purchaseNo: contract.purchase_no,
     drumCount: Number(contract.drum_count) || 0,
+    grossWeightPerDrum: Number(contract.gross_weight_per_drum) || ((Number(product.kgs_per_drum) || 0) + 18),
     issueDate: contract.issue_date,
     issueDateLong: formatSignatureDateEnglish(contract.issue_date),
     piExpiryDate: contract.pi_expiry_date,
@@ -3616,22 +3731,22 @@ function buildContractPreviewFromRows(
     packingEn: `The product packaging uses new closed steel drums${palletized ? " with pallets" : ""}. The net product weight of each drum is ${drumWeight} kg.`,
     packingCn: `产品使用新的封闭钢桶包装${palletized ? "并打托" : "，不打托"}，每桶净重 ${drumWeight} 公斤。`,
     paymentTermsEn: `The buyer shall pay the purchase price to the seller by wire transfer before ${paymentDeadlineEn}, totaling $${advanceText}(in words: ${toEnglishDollarWords(advanceAmount)}). The remaining payment should be paid within five business days upon receipt of the copy of the bill of lading,totaling $${balanceText}(in words:${toEnglishDollarWords(balanceAmount)}). In case of overdue payment, the Seller may have the right to cancel the contract and the Buyer shall compensate the Seller for all losses caused thereform.`,
-    paymentTermsCn: `买方应于${paymentDeadlineCn}前通过电汇向卖方支付的货款，总额为${advanceText}美元（用文字表述：${toChineseDollarWords(advanceAmount)}）。余款应于收到提单副本后五个工作日内付清，总额为${balanceText}美元（用文字表述：${toChineseDollarWords(balanceAmount)}）。若逾期付款，卖方有权解除合同，买方须赔偿卖方由此造成的全部损失。`,
+    paymentTermsCn: `买方应于${paymentDeadlineCn}前通过电汇向卖方支付的货款，总额为${advanceText}美元（金额：${toChineseDollarWords(advanceAmount)}）。余款应于收到提单副本后五个工作日内付清，总额为${balanceText}美元（金额：${toChineseDollarWords(balanceAmount)}）。若逾期付款，卖方有权解除合同，买方须赔偿卖方由此造成的全部损失。`,
     terms,
   };
 }
 
 function buildShippingExcelFields(preview: NonNullable<ContractPreview>) {
   const netWeightPerDrum = Number(preview.product.kgs_per_drum) || 0;
-  const grossWeightPerDrum = netWeightPerDrum + 18;
+  const grossWeightPerDrum = Number(preview.grossWeightPerDrum) || netWeightPerDrum + 18;
   return {
     ...buildContractExcelFields(preview),
     purchase_no: preview.purchaseNo || "-",
     drum_count: String(preview.drumCount),
     net_weight_per_drum: formatQuantity(netWeightPerDrum),
-    total_net_weight: formatQuantity(netWeightPerDrum * preview.drumCount),
+    total_net_weight: formatQuantityWithThousands(netWeightPerDrum * preview.drumCount),
     gross_weight_per_drum: formatQuantity(grossWeightPerDrum),
-    total_gross_weight: formatQuantity(grossWeightPerDrum * preview.drumCount),
+    total_gross_weight: formatQuantityWithThousands(grossWeightPerDrum * preview.drumCount),
     dimension_per_drum: "0.24",
     total_dimension: formatQuantity(0.24 * preview.drumCount),
   };
@@ -3658,6 +3773,8 @@ function buildContractExcelFields(preview: NonNullable<ContractPreview>) {
     seller_jurisdiction_en: "China",
     seller_jurisdiction_cn: "中国",
     seller_address: preview.seller.address || "-",
+    seller_tel: preview.seller.tel || "-",
+    seller_phone: preview.seller.tel || "-",
     seller_contact: [preview.customerManager.name, preview.customerManager.phone].filter(Boolean).join(" ") || "-",
     seller_email: preview.customerManager.email || "-",
     seller_bank_information: formatSellerBankInformation(preview.seller),
@@ -3668,7 +3785,9 @@ function buildContractExcelFields(preview: NonNullable<ContractPreview>) {
     buyer_address: preview.buyer.address || "-",
     buyer_phone: preview.buyer.phone || "-",
     buyer_contact_person: normalizeContactPerson(preview.buyer.contact_person),
+    contact_person: normalizeContactPerson(preview.buyer.contact_person),
     buyer_email: preview.buyer.email ? `E-mail: ${preview.buyer.email}` : "-",
+    product_description: preview.product.product_description || "-",
     product_name_en: `${preview.product.name_en}(${productPalletEn})`,
     product_name_cn: `${preview.product.name_cn || "-"}（${productPalletCn}）`,
     product_hs_code: preview.product.hs_code || "-",
@@ -3710,7 +3829,8 @@ function buildPiExcelFields(preview: NonNullable<ContractPreview>) {
     destination_port_bilingual: [preview.destinationPortEn, preview.destinationPortCn].filter(Boolean).join(" / "),
     product_model: preview.product.model || "-",
     buyer_phone_line: preview.buyer.phone || "-",
-    buyer_email_line: preview.buyer.email ? `E-mail: ${preview.buyer.email}` : "-",
+    buyer_email: preview.buyer.email || "-",
+    buyer_email_line: preview.buyer.email || "-",
     seller_contact_line: [preview.customerManager.name, preview.customerManager.phone].filter(Boolean).join(" ") || "-",
     seller_email_line: preview.customerManager.email ? `E-mail: ${preview.customerManager.email}` : "-",
     total_amount_line_en: `Total Amount: $${formatPlainMoney(preview.totalAmount)} (in words: ${toEnglishDollarWords(preview.totalAmount)})`,
@@ -3733,7 +3853,7 @@ function emptyTermConfigurationForm(): TermConfigurationFormState {
   };
 }
 
-function contractDraftToPayload(contract: ContractDraft, balanceAmount: number): Row {
+function contractDraftToPayload(contract: ContractDraft, balanceAmount: number, data?: Record<TableName, Row[]>): Row {
   return {
     contract_no: contract.contract_no.trim(),
     issue_date: contract.issue_date,
@@ -3753,8 +3873,15 @@ function contractDraftToPayload(contract: ContractDraft, balanceAmount: number):
     pi_expiry_date: contract.pi_expiry_date,
     palletized: contract.palletized,
     drum_count: Number(contract.drum_count) || 0,
+    gross_weight_per_drum: Number(contract.gross_weight_per_drum) || getDefaultGrossWeightForDraft(contract, data),
     purchase_no: contract.purchase_no,
   };
+}
+
+function getDefaultGrossWeightForDraft(contract: ContractDraft, data?: Record<TableName, Row[]>) {
+  const product = data?.products.find((row) => Number(row.id) === Number(contract.product_id));
+  const netWeightPerDrum = Number(product?.kgs_per_drum) || 0;
+  return netWeightPerDrum ? netWeightPerDrum + 18 : 0;
 }
 
 function validateContractDraft(contract: ContractDraft) {
@@ -3807,6 +3934,7 @@ function contractRowToDraft(row: Row): ContractDraft {
     pi_expiry_date: String(row.pi_expiry_date || defaultExpiryDate),
     palletized: row.palletized === "yes" ? "yes" : "no",
     drum_count: String(row.drum_count ?? "0"),
+    gross_weight_per_drum: String(row.gross_weight_per_drum ?? ""),
     purchase_no: String(row.purchase_no ?? ""),
     purchase_no_touched: "yes",
   };
@@ -3957,7 +4085,7 @@ function formatMoney(value: number) {
 }
 
 function formatPlainMoney(value: number) {
-  return (Number.isFinite(value) ? value : 0).toFixed(2);
+  return formatMoney(value);
 }
 
 function formatQuantity(value: number) {
@@ -3965,8 +4093,13 @@ function formatQuantity(value: number) {
   return Number.isInteger(value) ? String(value) : String(Number(value.toFixed(3)));
 }
 
+function formatQuantityWithThousands(value: number) {
+  if (!Number.isFinite(value)) return "0";
+  return new Intl.NumberFormat("en-US", { maximumFractionDigits: 3 }).format(value);
+}
+
 function formatContractAmount(value: number) {
-  return (Math.round((Number.isFinite(value) ? value : 0) * 100) / 100).toFixed(2).replace(/\.?0+$/, "");
+  return formatMoney(value);
 }
 
 const englishOnes = ["", "ONE", "TWO", "THREE", "FOUR", "FIVE", "SIX", "SEVEN", "EIGHT", "NINE", "TEN", "ELEVEN", "TWELVE", "THIRTEEN", "FOURTEEN", "FIFTEEN", "SIXTEEN", "SEVENTEEN", "EIGHTEEN", "NINETEEN"];

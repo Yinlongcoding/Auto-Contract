@@ -43,7 +43,29 @@ jobs:
         with:
           tagName: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
           releaseName: "Auto Contract ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}"
-          releaseBody: "Windows installer and updater files."
+          releaseBody: |
+            ## Full Changelog
+
+            ### Document generation
+            - Added an export type chooser for each document so users can export Contract, PI, PL, and CI as either Excel or PDF.
+            - Added editable gross weight per drum with a default of net weight plus 18 KG.
+            - Applied thousands separators to exported monetary values and PL/CI total net and gross weight values.
+            - Ensured empty buyer contact person values are rendered as `***` in PL/CI output.
+            - Removed the extra `E-mail:` prefix from PI buyer email template values.
+
+            ### Master data
+            - Added trade account Tel and account description fields.
+            - Switched trade account selection and listing to use account description.
+            - Added product description fields and switched product selection/listing to use product description.
+            - Removed CAS from product create, edit, detail, and list views.
+            - Added the integrated manufacturer-trader customer type option.
+
+            ### Fixes
+            - Fixed deletion of term configuration schemes when one of their terms had already been removed from the term library.
+
+            ### Validation
+            - Verified with `npm run build`.
+            - Verified with `cargo check`.
           releaseDraft: false
           prerelease: false
           releaseCommitish: ${{ github.sha }}

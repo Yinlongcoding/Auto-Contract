@@ -1,6 +1,6 @@
 {
   "name": "auto-contact-desktop",
-  "version": "1.0.12",
+  "version": "1.0.13",
   "type": "module",
   "description": "外贸单据生成桌面应用",
   "scripts": {

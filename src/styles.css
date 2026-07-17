@@ -471,6 +471,26 @@ input:not([type="checkbox"]):not([type="radio"]):not([type="file"]) {
   gap: 10px;
 }
 
+.export-type-dialog {
+  width: min(420px, calc(100vw - 32px));
+  padding: 22px;
+  background: #ffffff;
+  border: 1px solid #dce3e1;
+  border-radius: 8px;
+  box-shadow: 0 28px 80px rgba(12, 24, 21, 0.28);
+}
+
+.export-type-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 20px;
+}
+
+.export-type-actions button {
+  min-height: 46px;
+}
+
 .contract-preview-backdrop {
   position: fixed;
   inset: 0;
@@ -3294,8 +3314,12 @@ body {
   width: 132px;
 }
 
+.product-col-description {
+  width: 22%;
+}
+
 .product-col-name {
-  width: 25%;
+  width: 22%;
 }
 
 .product-col-hscode {
@@ -3307,10 +3331,6 @@ body {
 }
 
 .product-col-package {
-  width: 13%;
-}
-
-.product-col-cas {
   width: auto;
 }
 
