@@ -28,7 +28,7 @@ import { isTauriRuntime, tauriApi } from "@/lib/desktop-api";
 import { LogicalSize } from "@tauri-apps/api/dpi";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { exit, relaunch } from "@tauri-apps/plugin-process";
-import { check } from "@tauri-apps/plugin-updater";
+import { check, type DownloadEvent } from "@tauri-apps/plugin-updater";
 
 type TableName =
   | "companies"
@@ -109,6 +109,13 @@ type AppMessageDialogState = {
   confirmText?: string;
   cancelText?: string;
   resolve: (confirmed: boolean) => void;
+};
+
+type UpdateDownloadProgress = {
+  status: "starting" | "downloading" | "installing";
+  downloadedBytes: number;
+  contentLength: number | null;
+  percent: number | null;
 };
 
 type LoginVerificationResult =
@@ -337,12 +344,50 @@ function shouldBlockDesktopShortcut(event: KeyboardEvent) {
   return refreshKeys || devtoolsKeys || browserNavigationKeys || sourceKeys;
 }
 
-async function checkForAppUpdate(confirmUpdate: () => Promise<boolean>) {
+async function checkForAppUpdate(
+  confirmUpdate: () => Promise<boolean>,
+  onDownloadProgress: (progress: UpdateDownloadProgress | null) => void,
+) {
   if (!isTauriRuntime || updateCheckStarted) {
     return;
   }
 
   updateCheckStarted = true;
+  let downloadedBytes = 0;
+  let contentLength: number | null = null;
+
+  function notifyDownloadProgress(event: DownloadEvent) {
+    if (event.event === "Started") {
+      downloadedBytes = 0;
+      contentLength = event.data.contentLength ?? null;
+      onDownloadProgress({
+        status: contentLength ? "downloading" : "starting",
+        downloadedBytes,
+        contentLength,
+        percent: contentLength ? 0 : null,
+      });
+      return;
+    }
+
+    if (event.event === "Progress") {
+      downloadedBytes += event.data.chunkLength;
+      onDownloadProgress({
+        status: "downloading",
+        downloadedBytes,
+        contentLength,
+        percent: contentLength ? Math.min(100, Math.round((downloadedBytes / contentLength) * 100)) : null,
+      });
+      return;
+    }
+
+    onDownloadProgress({
+      status: "installing",
+      downloadedBytes: contentLength ?? downloadedBytes,
+      contentLength,
+      percent: 100,
+    });
+  }
+
   try {
     const update = await check();
     if (!update) {
@@ -353,9 +398,16 @@ async function checkForAppUpdate(confirmUpdate: () => Promise<boolean>) {
       await exit(0);
       return;
     }
-    await update.downloadAndInstall();
+    onDownloadProgress({
+      status: "starting",
+      downloadedBytes: 0,
+      contentLength: null,
+      percent: null,
+    });
+    await update.downloadAndInstall(notifyDownloadProgress);
     await relaunch();
   } catch (error) {
+    onDownloadProgress(null);
     console.error("Failed to check for app updates", error);
   }
 }
@@ -374,6 +426,7 @@ export function App() {
   const [viewContractRow, setViewContractRow] = useState<Row | null>(null);
   const [deleteContractCandidate, setDeleteContractCandidate] = useState<Row | null>(null);
   const [appMessageDialog, setAppMessageDialog] = useState<AppMessageDialogState | null>(null);
+  const [updateDownloadProgress, setUpdateDownloadProgress] = useState<UpdateDownloadProgress | null>(null);
   const [data, setData] = useState<Record<TableName, Row[]>>({
     companies: [],
     customers: [],
@@ -417,13 +470,15 @@ export function App() {
 
   useEffect(() => {
     void prepareLoginWindow().catch(console.error);
-    void checkForAppUpdate(() =>
-      showConfirm("检测到新版本，是否立即下载并安装？如果取消，应用将自动关闭。", {
-        title: "发现新版本",
-        confirmText: "下载并安装",
-        cancelText: "关闭应用",
-        tone: "warning",
-      }),
+    void checkForAppUpdate(
+      () =>
+        showConfirm("检测到新版本，是否立即下载并安装？如果取消，应用将自动关闭。", {
+          title: "发现新版本",
+          confirmText: "下载并安装",
+          cancelText: "关闭应用",
+          tone: "warning",
+        }),
+      setUpdateDownloadProgress,
     );
   }, []);
 
@@ -950,6 +1005,8 @@ export function App() {
           onConfirm={() => closeAppMessageDialog(true)}
         />
       ) : null}
+
+      {updateDownloadProgress ? <UpdateDownloadDialog progress={updateDownloadProgress} /> : null}
         </div>
       </AppAlertContext.Provider>
     </WindowFrame>
@@ -1113,6 +1170,64 @@ function AppMessageDialog({
       </div>
     </div>
   );
+}
+
+function UpdateDownloadDialog({ progress }: { progress: UpdateDownloadProgress }) {
+  const hasKnownTotal = progress.contentLength !== null && progress.contentLength > 0;
+  const percent = progress.percent ?? 0;
+  const statusText = progress.status === "installing" ? "正在安装更新" : "正在下载更新";
+  const detailText = hasKnownTotal
+    ? `${formatFileSize(progress.downloadedBytes)} / ${formatFileSize(progress.contentLength ?? 0)}`
+    : progress.downloadedBytes > 0
+      ? `已下载 ${formatFileSize(progress.downloadedBytes)}`
+      : "正在准备下载";
+
+  return (
+    <div className="modal-backdrop update-progress-backdrop">
+      <div className="update-progress-card" role="dialog" aria-modal="true" aria-labelledby="update-progress-title">
+        <div className="update-progress-heading">
+          <span className="update-progress-icon">
+            <Package size={24} />
+          </span>
+          <div>
+            <h2 id="update-progress-title">{statusText}</h2>
+            <p>下载完成后，将自动安装并重启应用。</p>
+          </div>
+        </div>
+        <div className="update-progress-meter-row">
+          <div
+            className={`update-progress-meter${hasKnownTotal ? "" : " indeterminate"}`}
+            role="progressbar"
+            aria-label={statusText}
+            aria-valuemin={hasKnownTotal ? 0 : undefined}
+            aria-valuemax={hasKnownTotal ? 100 : undefined}
+            aria-valuenow={hasKnownTotal ? percent : undefined}
+          >
+            <span style={{ width: hasKnownTotal ? `${percent}%` : undefined }} />
+          </div>
+          <strong>{hasKnownTotal ? `${percent}%` : "下载中"}</strong>
+        </div>
+        <span className="update-progress-detail">{detailText}</span>
+      </div>
+    </div>
+  );
+}
+
+function formatFileSize(bytes: number) {
+  if (bytes < 1024) {
+    return `${bytes} B`;
+  }
+
+  const units = ["KB", "MB", "GB"];
+  let size = bytes / 1024;
+  let unitIndex = 0;
+
+  while (size >= 1024 && unitIndex < units.length - 1) {
+    size /= 1024;
+    unitIndex += 1;
+  }
+
+  return `${size.toFixed(size >= 10 ? 1 : 2)} ${units[unitIndex]}`;
 }
 
 function ContractPanel({
